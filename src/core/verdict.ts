@@ -131,6 +131,16 @@ export function adviceForCollision(p: AdviceParams): string {
 
 const MAX_BLOCKS = 3;
 
+/** "neighbor : PROJ-88 · agent of Léa (session 3f2a) · PR open · active 4 min ago" */
+function neighborLine(n: NeighborInfo, locale: Locale, now: string): string {
+  const dict = dictFor(locale);
+  const stateTags: string[] = [];
+  if (n.prApproved) stateTags.push(dict["tag.prApproved"]);
+  else if (n.prOpen) stateTags.push(dict["tag.prOpen"]);
+  stateTags.push(format(dict, "tag.activeAgo", { mins: minutesBetween(n.lastActivityAt, now) }));
+  return `${format(dict, "label.neighbor", {})} : ${[n.issueKey, n.actorLabel, ...stateTags].join(" · ")}`;
+}
+
 function quotes(locale: Locale): [string, string] {
   return locale === "fr" ? ["« ", " »"] : ['"', '"'];
 }
@@ -163,20 +173,11 @@ function collisionBlock(
   if (tags.length > 0) collisionLine += ` · ${tags.join(" · ")}`;
   lines.push(`${format(dict, "label.collision", {})} : ${collisionLine}`);
 
-  const n = c.neighbor;
-  const stateTags: string[] = [];
-  if (n.prApproved) stateTags.push(dict["tag.prApproved"]);
-  else if (n.prOpen) stateTags.push(dict["tag.prOpen"]);
-  stateTags.push(
-    format(dict, "tag.activeAgo", { mins: minutesBetween(n.lastActivityAt, now) }),
-  );
-  lines.push(
-    `${format(dict, "label.neighbor", {})} : ${[n.issueKey, n.actorLabel, ...stateTags].join(" · ")}`,
-  );
+  lines.push(neighborLine(c.neighbor, locale, now));
 
   lines.push(`${format(dict, "label.reason", {})} : ${c.reason}`);
-  if (n.notice) {
-    lines.push(`${format(dict, "label.neighborNotice", {})} : ${qo}${n.notice}${qc}`);
+  if (c.neighbor.notice) {
+    lines.push(`${format(dict, "label.neighborNotice", {})} : ${qo}${c.neighbor.notice}${qc}`);
   }
   lines.push(`${format(dict, "label.todo", {})} : ${c.advice}`);
   if (c.estimatedResumeMinutes !== undefined) {

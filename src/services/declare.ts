@@ -15,6 +15,7 @@ import {
   type Locale,
   type Verdict,
   type Worksite,
+  type Zone,
 } from "../core/types";
 import type { Ctx } from "./ctx";
 import {
@@ -60,6 +61,54 @@ async function freezeVerdict(
   };
 }
 
+/** Detection + verdict assembly shared by declareFootprint and checkZone. */
+async function detectForSubject(
+  ctx: Ctx,
+  subject: { worksite: Worksite; entries: FootprintEntry[] },
+  repoId: string,
+  zones: Zone[],
+  hardMode: boolean,
+  locale: Locale,
+  opts: { deliverNotices: boolean; persist: boolean },
+): Promise<Verdict> {
+  const now = ctx.now();
+  const others = (await loadOpenWorksites(ctx, repoId)).filter(
+    (o) => o.worksite.id !== subject.worksite.id,
+  );
+  const reservations = await ctx.stores.reservations.listActive(repoId, now);
+  const drafts = detectCollisions(subject, others, { zones, reservations, now, hardMode });
+  return buildVerdict(ctx, {
+    subject: subject.worksite,
+    drafts,
+    othersById: new Map(others.map((o) => [o.worksite.id, o])),
+    zones,
+    reservations,
+    hardMode,
+    locale,
+    deliverNotices: opts.deliverNotices,
+    persist: opts.persist,
+  });
+}
+
+/** Store the declared entries (fact beats intent) and log the gaps. */
+async function persistDeclaration(
+  ctx: Ctx,
+  worksiteId: string,
+  paths: string,
+  mode: FootprintMode,
+  now: string,
+): Promise<number> {
+  const incoming = entriesFromPaths(paths, worksiteId, "declared", mode, now);
+  const existing = await ctx.stores.footprints.listByWorksite(worksiteId);
+  const merged = mergeEntries(existing, incoming, now);
+  if (merged.toAdd.length > 0) await ctx.stores.footprints.add(merged.toAdd);
+  if (merged.mismatches.length > 0) {
+    await logEvent(ctx, "footprint.mismatch", worksiteId, { paths: merged.mismatches });
+  }
+  await logEvent(ctx, "footprint.declared", worksiteId, { count: incoming.length });
+  return incoming.length;
+}
+
 export async function declareFootprint(ctx: Ctx, input: DeclareInput): Promise<Verdict> {
   const now = ctx.now();
   const locale = input.locale ?? "en";
@@ -77,45 +126,25 @@ export async function declareFootprint(ctx: Ctx, input: DeclareInput): Promise<V
     state: "open",
   });
 
-  const incoming = entriesFromPaths(input.paths, w.id, "declared", input.mode ?? "edit", now);
-  const existing = await ctx.stores.footprints.listByWorksite(w.id);
-  const merged = mergeEntries(existing, incoming, now);
-  if (merged.toAdd.length > 0) await ctx.stores.footprints.add(merged.toAdd);
-  if (merged.mismatches.length > 0) {
-    await logEvent(ctx, "footprint.mismatch", w.id, { paths: merged.mismatches });
-  }
-  await logEvent(ctx, "footprint.declared", w.id, { count: incoming.length });
+  const declared = await persistDeclaration(ctx, w.id, input.paths, input.mode ?? "edit", now);
 
   // Spec §21: a repo-wide reformat suggests an announced freeze instead of
   // hundreds of collisions.
-  if (incoming.length > FREEZE_SUGGESTION_THRESHOLD) {
-    return freezeVerdict(ctx, w, incoming.length, locale);
+  if (declared > FREEZE_SUGGESTION_THRESHOLD) {
+    return freezeVerdict(ctx, w, declared, locale);
   }
 
   const entries = await ctx.stores.footprints.listByWorksite(w.id);
   const fresh = (await ctx.stores.worksites.findById(w.id)) ?? w;
-  const subject = { worksite: fresh, entries };
-  const others = (await loadOpenWorksites(ctx, repo.id)).filter(
-    (o) => o.worksite.id !== fresh.id,
-  );
-  const reservations = await ctx.stores.reservations.listActive(repo.id, now);
-  const drafts = detectCollisions(subject, others, {
+  const verdict = await detectForSubject(
+    ctx,
+    { worksite: fresh, entries },
+    repo.id,
     zones,
-    reservations,
-    now,
-    hardMode: rules.hardMode,
-  });
-
-  const verdict = await buildVerdict(ctx, {
-    subject: fresh,
-    drafts,
-    othersById: new Map(others.map((o) => [o.worksite.id, o])),
-    zones,
-    reservations,
-    hardMode: rules.hardMode,
+    rules.hardMode,
     locale,
-    deliverNotices: true,
-  });
+    { deliverNotices: true, persist: true },
+  );
 
   if (ctx.jira) {
     const worst = verdict.collisions[0];
@@ -164,26 +193,13 @@ export async function checkZone(ctx: Ctx, input: CheckZoneInput): Promise<Verdic
     now,
   ).map((e) => ({ ...e, firstAt: now, lastAt: now }));
 
-  const others = (await loadOpenWorksites(ctx, repo.id)).filter(
-    (o) => o.worksite.id !== probe.id,
-  );
-  const reservations = await ctx.stores.reservations.listActive(repo.id, now);
-  const drafts = detectCollisions({ worksite: probe, entries }, others, {
+  return detectForSubject(
+    ctx,
+    { worksite: probe, entries },
+    repo.id,
     zones,
-    reservations,
-    now,
-    hardMode: rules.hardMode,
-  });
-
-  return buildVerdict(ctx, {
-    subject: probe,
-    drafts,
-    othersById: new Map(others.map((o) => [o.worksite.id, o])),
-    zones,
-    reservations,
-    hardMode: rules.hardMode,
+    rules.hardMode,
     locale,
-    deliverNotices: false,
-    persist: false,
-  });
+    { deliverNotices: false, persist: false },
+  );
 }

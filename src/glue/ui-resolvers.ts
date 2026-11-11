@@ -264,34 +264,49 @@ export async function loadScreen(
       const stats = await deps.collisionStats(ctx, { repoSlug, since: text(body.since) });
       return { data: stats, props: { stats } };
     }
-    case "projectSettings": {
-      const settings: ProjectSettingsData = await deps.projectSettingsData(ctx);
-      // The screen's declared props (src/ui/projectSettings.tsx) — `projectId`
-      // and `ingestUrl` stay in `data`, they are not part of the props.
-      const props = {
-        repos: settings.repos,
-        zones: settings.zones,
-        rules: settings.rules,
-        hooksFile: settings.hooksFile,
-        ciSnippets: settings.ciSnippets,
-      };
-      return { data: settings, props };
-    }
-    default: {
-      const settings: PersonalSettingsData = await deps.personalSettingsData(ctx, {
-        createToken: tokenScopeOf(body.createToken),
-      });
-      const newToken = settings.newToken?.token;
-      const props: Record<string, unknown> = {
-        myWorksites: settings.myWorksites,
-        mySessions: settings.mySessions,
-        tokens: settings.tokens,
-        now: settings.now,
-      };
-      if (newToken !== undefined) props.newToken = newToken;
-      return { data: settings, props };
-    }
+    case "projectSettings":
+      return projectSettingsScreen(deps, ctx);
+    default:
+      return personalSettingsScreen(deps, ctx, body);
   }
+}
+
+async function projectSettingsScreen(
+  deps: UiDataDeps,
+  ctx: Ctx,
+): Promise<ScreenLoad> {
+  const settings: ProjectSettingsData = await deps.projectSettingsData(ctx);
+  // The screen's declared props (src/ui/projectSettings.tsx) — `projectId`
+  // and `ingestUrl` stay in `data`, they are not part of the props.
+  return {
+    data: settings,
+    props: {
+      repos: settings.repos,
+      zones: settings.zones,
+      rules: settings.rules,
+      hooksFile: settings.hooksFile,
+      ciSnippets: settings.ciSnippets,
+    },
+  };
+}
+
+async function personalSettingsScreen(
+  deps: UiDataDeps,
+  ctx: Ctx,
+  body: Record<string, unknown>,
+): Promise<ScreenLoad> {
+  const settings: PersonalSettingsData = await deps.personalSettingsData(ctx, {
+    createToken: tokenScopeOf(body.createToken),
+  });
+  const newToken = settings.newToken?.token;
+  const props: Record<string, unknown> = {
+    myWorksites: settings.myWorksites,
+    mySessions: settings.mySessions,
+    tokens: settings.tokens,
+    now: settings.now,
+  };
+  if (newToken !== undefined) props.newToken = newToken;
+  return { data: settings, props };
 }
 
 /** The DATA of a screen (resolver keys, tests, and the fallback panel). */

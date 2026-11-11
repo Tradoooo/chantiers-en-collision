@@ -31,13 +31,8 @@ import type { Ctx } from "../services/ctx";
 import { dailyJobs as dailyJobsService, sweep as sweepService, type SweepResult } from "../services/maintenance";
 import { ensureWorksite } from "../services/shared";
 import { closeWorksite, openWorksite } from "../services/worksites";
-import {
-  buildCtx,
-  DEFAULT_PROJECT_ID,
-  projectOfIssueKey,
-  type BuildCtxOptions,
-  type ForgeInvocationContext,
-} from "../forge-context";
+import { buildCtx, type BuildCtxOptions, type ForgeInvocationContext } from "../forge-context";
+import { projectIdsOfWorksites, repoIdsOfWorksites } from "./discovery";
 import { toTicketMeta } from "./jira-port";
 import {
   predictionFor as predictionForService,
@@ -93,7 +88,6 @@ export const LIVE_TRIGGER_DEPS: TriggerDeps = {
 /** Predicate matching nothing: an empty `in ()` list is not valid JQL. */
 export const EMPTY_JQL = 'summary = "__chantiers_none__"';
 const MAX_JQL_KEYS = 200;
-const MAX_PROJECTS = 20;
 
 /* ------------------------------------------------------------------ */
 /* Small untyped-payload helpers                                        */
@@ -200,22 +194,6 @@ export async function issueEvents(
 /* scheduledTrigger: five-minute-sweep / daily-jobs                     */
 /* ------------------------------------------------------------------ */
 
-/** Every non-closed worksite: the only global listing the stores offer. */
-async function openWorksites(ctx: Ctx) {
-  return ctx.stores.worksites.listIdleBefore(ctx.now());
-}
-
-/** Project keys seen in the worksite table (no "list projects" in the stores). */
-export async function projectIdsOf(ctx: Ctx): Promise<string[]> {
-  const ids = new Set<string>();
-  for (const worksite of await openWorksites(ctx)) {
-    const projectId = projectOfIssueKey(worksite.issueKey);
-    if (projectId !== undefined) ids.add(projectId);
-  }
-  if (ids.size === 0) ids.add(DEFAULT_PROJECT_ID);
-  return [...ids].slice(0, MAX_PROJECTS);
-}
-
 /** Run one maintenance job for every project, with that project's rules. */
 async function perProject<R>(
   context: ForgeInvocationContext | undefined,
@@ -225,7 +203,7 @@ async function perProject<R>(
 ): Promise<R[]> {
   const probe = await deps.buildCtx({ context, client });
   const results: R[] = [];
-  for (const projectId of await projectIdsOf(probe)) {
+  for (const projectId of await projectIdsOfWorksites(probe)) {
     const ctx = await deps.buildCtx({ context, client, projectId });
     results.push(await job(ctx));
   }
@@ -270,16 +248,10 @@ export function clauseArgument(args: unknown): string | undefined {
   );
 }
 
-async function repoIdsOf(ctx: Ctx): Promise<string[]> {
-  const ids = new Set<string>();
-  for (const worksite of await openWorksites(ctx)) ids.add(worksite.repoId);
-  return [...ids];
-}
-
 /** Issue keys carrying at least one OPEN collision, whatever the repository. */
 export async function collidingIssueKeys(ctx: Ctx): Promise<string[]> {
   const keys: string[] = [];
-  for (const repoId of await repoIdsOf(ctx)) {
+  for (const repoId of await repoIdsOfWorksites(ctx)) {
     for (const collision of await ctx.stores.collisions.listByRepo(repoId, true)) {
       for (const worksiteId of [collision.worksiteA, collision.worksiteB]) {
         const worksite = await ctx.stores.worksites.findById(worksiteId);

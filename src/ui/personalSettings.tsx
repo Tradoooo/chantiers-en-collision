@@ -25,6 +25,7 @@ import type { ActorSession, Worksite } from "../core/types";
 import { minutesBetween } from "../testing/clock";
 import { StateLozenge } from "./components";
 import { useActionBridge } from "./projectSettings";
+import type { ActionRouter } from "./issuePanel";
 
 type MyWorksite = Worksite & { actorLabel: string; repoSlug?: string };
 
@@ -187,6 +188,7 @@ function TokensTable(props: {
 function TokenPanel(props: {
   tokens: TokenPrint[];
   newToken?: string;
+  actions?: ActionRouter;
   send: ReturnType<typeof useActionBridge>;
 }) {
   return (

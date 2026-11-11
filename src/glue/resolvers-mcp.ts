@@ -28,6 +28,7 @@ import { postNotice } from "../services/notices";
 import { reserveZone } from "../services/reservations";
 import { resolveCollision } from "../services/resolve";
 import { buildNeighborInfo } from "../services/shared";
+import { projectOfRepoSlug } from "./discovery";
 import { closeWorksite, getWorksitePanel, whoTouches } from "../services/worksites";
 import { buildCtx, type BuildCtxOptions, type ForgeInvocationContext } from "../forge-context";
 import { predictionFor } from "./prediction";
@@ -135,15 +136,30 @@ function localeOf(payload: ToolPayload): Locale {
 
 async function toolCtx(
   request: ToolRequest,
-  extra: { issueKey?: string; sessionRef?: string; agentRef?: string } = {},
+  extra: { issueKey?: string; sessionRef?: string; agentRef?: string; repoSlug?: string } = {},
 ): Promise<Ctx> {
-  return MCP_DEPS.buildCtx({
+  const options: BuildCtxOptions = {
     context: request.context,
     client: "mcp",
     issueKey: extra.issueKey,
     sessionRef: extra.sessionRef,
     agentRef: extra.agentRef,
-  });
+  };
+  const ctx = await MCP_DEPS.buildCtx(options);
+  // A repo-only call (check-zone, who-touches) carries no project: without a
+  // hint the repos/zones/rules bucket would be the installation default and
+  // the repository would not be found. Look for the project that owns the slug.
+  if (extra.repoSlug === undefined || extra.issueKey !== undefined) return ctx;
+  if (projectHinted(request.context)) return ctx;
+  const projectId = await projectOfRepoSlug(ctx, extra.repoSlug);
+  if (projectId === undefined || projectId === ctx.projectId) return ctx;
+  return MCP_DEPS.buildCtx({ ...options, projectId });
+}
+
+/** True when the platform told us which Jira project the call comes from. */
+function projectHinted(context?: ForgeInvocationContext): boolean {
+  const key = context?.projectKey ?? context?.jira?.projectKey;
+  return typeof key === "string" && key !== "";
 }
 
 function verdictResult(tool: string, verdict: Verdict): ToolResult {
@@ -184,7 +200,7 @@ export async function declareFootprintTool(request: ToolRequest): Promise<ToolRe
 export async function checkZoneTool(request: ToolRequest): Promise<ToolResult> {
   const payload = payloadOf(request);
   const repoSlug = required(payload, "repo");
-  const ctx = await toolCtx(request, { issueKey: str(payload, "issueKey") });
+  const ctx = await toolCtx(request, { issueKey: str(payload, "issueKey"), repoSlug });
   const verdict = await checkZone(ctx, {
     repoSlug,
     paths: paths(payload),
@@ -199,7 +215,7 @@ export async function whoTouchesTool(request: ToolRequest): Promise<ToolResult> 
   const repoSlug = required(payload, "repo");
   const path = required(payload, "path");
   const locale = localeOf(payload);
-  const ctx = await toolCtx(request, { issueKey: str(payload, "issueKey") });
+  const ctx = await toolCtx(request, { issueKey: str(payload, "issueKey"), repoSlug });
   const neighbors = await whoTouches(ctx, { repoSlug, path });
   return {
     tool: "who-touches",

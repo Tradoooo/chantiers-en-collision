@@ -9,8 +9,10 @@ import { coverageOf } from "../core/footprints";
 import type {
   ActorKind,
   FootprintEntry,
+  Notice,
   FootprintSource,
   NeighborInfo,
+  Reservation,
   TicketMeta,
   Worksite,
   WorksiteOutcome,
@@ -145,6 +147,10 @@ export async function closeWorksite(
     });
     if (done) closed.push(done);
     await logEvent(ctx, "worksite.closed", w.id, { outcome });
+    // Nothing eternal: a closed worksite frees its reservations too.
+    for (const r of await ctx.stores.reservations.listByWorksite(w.id, now)) {
+      await ctx.stores.reservations.release(r.id, now);
+    }
     released.push(...(await releaseNeighbours(ctx, w)));
   }
   return { closed, released };
@@ -164,9 +170,68 @@ export async function markActivity(ctx: Ctx, worksiteId: string): Promise<void> 
   });
 }
 
+/** Gather footprints, collisions, notices and reservations of the ticket's worksites. */
+async function collectPerWorksite(ctx: Ctx, worksites: Worksite[], now: string) {
+  const allEntries: FootprintEntry[] = [];
+  const collisions: Awaited<ReturnType<typeof ctx.stores.collisions.listByWorksite>> = [];
+  const inbox: Awaited<ReturnType<typeof ctx.stores.notices.pendingFor>> = [];
+  const sent: Notice[] = [];
+  const reservations: Reservation[] = [];
+  for (const w of worksites) {
+    allEntries.push(...(await ctx.stores.footprints.listByWorksite(w.id)));
+    collisions.push(...(await ctx.stores.collisions.listByWorksite(w.id)));
+    inbox.push(...(await ctx.stores.notices.pendingFor([w.id])));
+    sent.push(...(await ctx.stores.notices.listByWorksite(w.id)));
+    reservations.push(...(await ctx.stores.reservations.listByWorksite(w.id, now)));
+  }
+  return { allEntries, collisions, inbox, sent, reservations };
+}
+
+/** One repository block of the panel (spec §16.1). */
+async function panelRepoBlock(
+  ctx: Ctx,
+  repoId: string,
+  worksites: Worksite[],
+): Promise<WorksitePanel["repos"][number] | undefined> {
+  const repo = await ctx.stores.repos.findById(repoId);
+  if (!repo) return undefined;
+  const now = ctx.now();
+  const footprintsBySource = {} as Record<FootprintSource, FootprintEntry[]>;
+  for (const src of ["predicted", "declared", "observed", "attested"] as FootprintSource[]) {
+    footprintsBySource[src] = [];
+  }
+  const acc = await collectPerWorksite(ctx, worksites, now);
+  const allEntries = acc.allEntries;
+  const neighbors: NeighborInfo[] = [];
+  const { collisions, inbox, sent, reservations } = acc;
+  const ownIds = new Set(worksites.map((w) => w.id));
+  const neighborIds = new Set(
+    collisions
+      .map((c) => (ownIds.has(c.worksiteA) ? c.worksiteB : c.worksiteA))
+      .filter((id) => !ownIds.has(id)),
+  );
+  for (const id of neighborIds) {
+    const other = await ctx.stores.worksites.findById(id);
+    if (other && other.state !== "closed") {
+      neighbors.push(await buildNeighborInfo(ctx, other, "en"));
+    }
+  }
+  for (const e of allEntries) footprintsBySource[e.source].push(e);
+  return {
+    repo,
+    worksites,
+    footprintsBySource,
+    coverage: coverageOf(allEntries),
+    neighbors,
+    collisions,
+    noticesInbox: inbox,
+    noticesSent: sent,
+    reservations,
+  };
+}
+
 /** Panel data for a ticket: everything of spec §16.1, per repository. */
 export async function getWorksitePanel(ctx: Ctx, issueKey: string): Promise<WorksitePanel> {
-  const now = ctx.now();
   const mine = await ctx.stores.worksites.findByIssue(issueKey);
   const byRepo = new Map<string, Worksite[]>();
   for (const w of mine) {
@@ -176,47 +241,8 @@ export async function getWorksitePanel(ctx: Ctx, issueKey: string): Promise<Work
   }
   const repos: WorksitePanel["repos"] = [];
   for (const [repoId, worksites] of byRepo) {
-    const repo = await ctx.stores.repos.findById(repoId);
-    if (!repo) continue;
-    const footprintsBySource = {} as Record<FootprintSource, FootprintEntry[]>;
-    for (const src of ["predicted", "declared", "observed", "attested"] as FootprintSource[]) {
-      footprintsBySource[src] = [];
-    }
-    const allEntries: FootprintEntry[] = [];
-    const neighbors: NeighborInfo[] = [];
-    const collisions = [];
-    const inbox = [];
-    const sent = [];
-    const reservations = [];
-    for (const w of worksites) {
-      const entries = await ctx.stores.footprints.listByWorksite(w.id);
-      allEntries.push(...entries);
-      for (const c of await ctx.stores.collisions.listByWorksite(w.id)) collisions.push(c);
-      inbox.push(...(await ctx.stores.notices.pendingFor([w.id])));
-      sent.push(...(await ctx.stores.notices.listByWorksite(w.id)));
-      reservations.push(...(await ctx.stores.reservations.listByWorksite(w.id, now)));
-      const neighborIds = collisions
-        .map((c) => (c.worksiteA === w.id ? c.worksiteB : c.worksiteA))
-        .filter((id) => !worksites.some((x) => x.id === id));
-      for (const id of new Set(neighborIds)) {
-        const other = await ctx.stores.worksites.findById(id);
-        if (other && other.state !== "closed") {
-          neighbors.push(await buildNeighborInfo(ctx, other, "en"));
-        }
-      }
-    }
-    for (const e of allEntries) footprintsBySource[e.source].push(e);
-    repos.push({
-      repo,
-      worksites,
-      footprintsBySource,
-      coverage: coverageOf(allEntries),
-      neighbors,
-      collisions,
-      noticesInbox: inbox,
-      noticesSent: sent,
-      reservations,
-    });
+    const block = await panelRepoBlock(ctx, repoId, worksites);
+    if (block) repos.push(block);
   }
   return { issueKey, repos };
 }

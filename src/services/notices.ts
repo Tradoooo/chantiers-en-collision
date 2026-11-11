@@ -40,25 +40,48 @@ async function repoIdsForNotice(
   return { repoIds, authorWorksiteId: worksites[0]?.id };
 }
 
+/** Open worksites of a repo whose footprint overlaps the notice paths. */
+async function findRecipients(
+  ctx: Ctx,
+  repoId: string,
+  authorWorksiteId: string | undefined,
+  paths: string[],
+): Promise<NeighborInfo[]> {
+  const open = await loadOpenWorksites(ctx, repoId);
+  const targets = open.filter(
+    (side) =>
+      side.worksite.id !== authorWorksiteId &&
+      side.entries.some((e) =>
+        paths.some((p) => entriesOverlap(e.path, e.kind, p, classifyPath(p))),
+      ),
+  );
+  const out: NeighborInfo[] = [];
+  for (const t of targets) out.push(await buildNeighborInfo(ctx, t.worksite, "en"));
+  return out;
+}
+
+/** Author of the notice: existing worksite of the ticket, or a fresh one
+ *  (a human can warn from the ticket panel without a worksite — spec §9.4). */
+async function authorOf(
+  ctx: Ctx,
+  input: PostNoticeInput,
+): Promise<{ repoIds: string[]; authorWorksiteId?: string }> {
+  const found = await repoIdsForNotice(ctx, input);
+  if (found.repoIds.length > 0 || !input.repoSlug) return found;
+  const { repo } = await resolveRepo(ctx, input.repoSlug);
+  const w = await ensureWorksite(ctx, { issueKey: input.issueKey, repoId: repo.id });
+  return { repoIds: [repo.id], authorWorksiteId: w.id };
+}
+
 export async function postNotice(
   ctx: Ctx,
   input: PostNoticeInput,
 ): Promise<{ notice: Notice; recipients: NeighborInfo[] }> {
-  const now = ctx.now();
   const paths = splitPathsBlock(input.paths);
   if (paths.length === 0) throw new Error("post-notice: at least one path is required");
   if (input.text.trim() === "") throw new Error("post-notice: text is required");
 
-  let { repoIds, authorWorksiteId } = await repoIdsForNotice(ctx, input);
-
-  // A human can warn from the ticket panel without a worksite yet (spec
-  // §9.4): open one so the notice has an author and a ticket anchor.
-  if (repoIds.length === 0 && input.repoSlug) {
-    const { repo } = await resolveRepo(ctx, input.repoSlug);
-    const w = await ensureWorksite(ctx, { issueKey: input.issueKey, repoId: repo.id });
-    repoIds = [repo.id];
-    authorWorksiteId = w.id;
-  }
+  const { repoIds, authorWorksiteId } = await authorOf(ctx, input);
   if (repoIds.length === 0) {
     throw new Error(`post-notice: no worksite or repo for ${input.issueKey}`);
   }
@@ -66,31 +89,21 @@ export async function postNotice(
   const recipients: NeighborInfo[] = [];
   let notice: Notice | undefined;
   for (const repoId of repoIds) {
-    const open = await loadOpenWorksites(ctx, repoId);
-    const targets = open.filter(
-      (side) =>
-        side.worksite.id !== authorWorksiteId &&
-        side.entries.some((e) =>
-          paths.some((p) => entriesOverlap(e.path, e.kind, p, classifyPath(p))),
-        ),
-    );
-    const candidate = {
-      worksiteId: authorWorksiteId ?? "",
-      repoId,
-      authorAccountId: ctx.identity.accountId,
-      issueKey: input.issueKey,
-      paths,
-      text: input.text,
-      createdAt: now,
-    };
+    const targets = await findRecipients(ctx, repoId, authorWorksiteId, paths);
     const posted = await ctx.stores.notices.post(
-      candidate,
-      targets.map((t) => t.worksite.id),
+      {
+        worksiteId: authorWorksiteId ?? "",
+        repoId,
+        authorAccountId: ctx.identity.accountId,
+        issueKey: input.issueKey,
+        paths,
+        text: input.text,
+        createdAt: ctx.now(),
+      },
+      targets.map((t) => t.worksiteId),
     );
     notice = notice ?? posted;
-    for (const t of targets) {
-      recipients.push(await buildNeighborInfo(ctx, t.worksite, "en"));
-    }
+    recipients.push(...targets);
   }
   await logEvent(ctx, "notice.posted", authorWorksiteId, {
     paths,

@@ -8,9 +8,12 @@
 import type {
   ActorKind,
   ActorSession,
+  Collision,
   CollisionDraft,
+  Degree,
   Locale,
   NeighborInfo,
+  NoticeView,
   RepoRecord,
   Reservation,
   TicketMeta,
@@ -19,6 +22,7 @@ import type {
   Worksite,
   WorksiteState,
   Zone,
+  ZoneNature,
 } from "../core/types";
 import type { WorksiteWithEntries } from "../core/collisions";
 import {
@@ -216,81 +220,170 @@ function estimateResume(
  * notices once, compute the verdict kind and format the text (spec §17
  * steps 5–6). THE single place where a Verdict is assembled.
  */
+/** Last notice posted by a worksite, shown as "neighbor's notice". */
+async function lastNoticeOf(ctx: Ctx, worksiteId: string): Promise<string | undefined> {
+  const sent = await ctx.stores.notices.listByWorksite(worksiteId);
+  return sent.length > 0 ? sent[sent.length - 1]?.text : undefined;
+}
+
+interface WordingInput {
+  degree: Degree;
+  nature: ZoneNature;
+  zoneName?: string;
+  until?: string;
+  reservedByIssueKey?: string;
+  neighborIssueKey: string;
+  neighborPrOpen?: boolean;
+  hardMode: boolean;
+  locale: Locale;
+}
+
+/** The "reason" and "what to do" lines of a collision (spec §8). */
+function wordingFor(w: WordingInput): { reason: string; advice: string } {
+  return {
+    reason: reasonForCollision({
+      degree: w.degree,
+      zoneNature: w.nature,
+      zoneName: w.zoneName,
+      until: w.until,
+      reservedByIssueKey: w.reservedByIssueKey,
+      locale: w.locale,
+    }),
+    advice: adviceForCollision({
+      degree: w.degree,
+      zoneNature: w.nature,
+      zoneName: w.zoneName,
+      neighborIssueKey: w.neighborIssueKey,
+      neighborPrOpen: w.neighborPrOpen,
+      hardMode: w.hardMode,
+      locale: w.locale,
+    }),
+  };
+}
+
+/** Build one VerdictCollisionInfo from an upserted (or probe) collision. */
+async function collisionInfoFor(
+  ctx: Ctx,
+  args: BuildVerdictArgs,
+  collision: Collision,
+  locale: Locale,
+  now: string,
+): Promise<VerdictCollisionInfo | undefined> {
+  const otherId =
+    collision.worksiteA === args.subject.id ? collision.worksiteB : collision.worksiteA;
+  const other = args.othersById.get(otherId);
+  if (!other) return undefined;
+  const neighbor = await buildNeighborInfo(
+    ctx,
+    other.worksite,
+    locale,
+    await lastNoticeOf(ctx, otherId),
+  );
+  const zone = args.zones.find((z) => z.id === collision.zoneId);
+  const nature = zone?.nature ?? "ordinary";
+  const reservation = args.reservations.find(
+    (r) => r.worksiteId === otherId && !r.releasedAt && r.expiresAt > now,
+  );
+  const { reason, advice } = wordingFor({
+    degree: collision.degree,
+    nature,
+    zoneName: zone?.name,
+    until: reservation?.expiresAt ?? zone?.frozenTo,
+    reservedByIssueKey: reservation ? other.worksite.issueKey : undefined,
+    neighborIssueKey: other.worksite.issueKey,
+    neighborPrOpen: other.worksite.prOpen,
+    hardMode: args.hardMode,
+    locale,
+  });
+  return assembleInfo({ args, collision, other: other.worksite, neighbor, zone, nature, reservation, reason, advice, otherId, now });
+}
+
+interface AssembleParts {
+  args: BuildVerdictArgs;
+  collision: Collision;
+  other: Worksite;
+  neighbor: NeighborInfo;
+  zone?: Zone;
+  nature: ZoneNature;
+  reservation?: Reservation;
+  reason: string;
+  advice: string;
+  otherId: string;
+  now: string;
+}
+
+/** Final shape of one collision line of the verdict. */
+function assembleInfo(p: AssembleParts): VerdictCollisionInfo {
+  return {
+    collisionId: p.collision.id,
+    degree: p.collision.degree,
+    zoneName: p.zone?.name,
+    zoneNature: p.nature,
+    path: p.collision.path,
+    neighbor: p.neighbor,
+    reason: p.reason,
+    advice: p.advice,
+    estimatedResumeMinutes: estimateResume(
+      p.args.reservations,
+      p.otherId,
+      p.other.prOpen,
+      p.now,
+    ),
+    sameTicket: p.other.issueKey === p.args.subject.issueKey,
+    samePilot: p.other.accountId === p.args.subject.accountId,
+    probable: p.collision.probable,
+    hardDeny:
+      p.args.hardMode &&
+      p.collision.degree === 4 &&
+      (p.nature === "exclusive" || p.nature === "frozen" || p.reservation !== undefined),
+  };
+}
+
+/** Pending notices for the subject, marked delivered when asked (once each). */
+async function pendingForSubject(
+  ctx: Ctx,
+  subjectId: string,
+  deliver: boolean,
+): Promise<NoticeView[]> {
+  const pending = await ctx.stores.notices.pendingFor([subjectId]);
+  if (deliver) {
+    for (const n of pending) {
+      await ctx.stores.notices.markDelivered(n.noticeId, subjectId, ctx.now());
+    }
+  }
+  return pending;
+}
+
+/**
+ * Upsert collisions, build the VerdictCollisionInfo list, deliver pending
+ * notices once, compute the verdict kind and format the text (spec §17
+ * steps 5-6). THE single place where a Verdict is assembled.
+ */
 export async function buildVerdict(ctx: Ctx, args: BuildVerdictArgs): Promise<Verdict> {
   const locale = args.locale ?? "en";
   const now = ctx.now();
   const infos: VerdictCollisionInfo[] = [];
 
   for (const draft of args.drafts) {
-    const collision =
+    const collision: Collision =
       args.persist === false
-        ? { ...draft, id: `probe-${draft.worksiteA}-${draft.worksiteB}-${draft.zoneId ?? ""}`, state: "open" as const, detectedAt: now }
+        ? {
+            ...draft,
+            id: `probe-${draft.worksiteA}-${draft.worksiteB}-${draft.zoneId ?? ""}`,
+            state: "open",
+            detectedAt: now,
+          }
         : await ctx.stores.collisions.upsert(draft);
-    const otherId =
-      collision.worksiteA === args.subject.id ? collision.worksiteB : collision.worksiteA;
-    const other = args.othersById.get(otherId);
-    if (!other) continue;
-    const sent = await ctx.stores.notices.listByWorksite(otherId);
-    const lastNotice = sent.length > 0 ? sent[sent.length - 1] : undefined;
-    const neighbor = await buildNeighborInfo(ctx, other.worksite, locale, lastNotice?.text);
-    const zone = args.zones.find((z) => z.id === collision.zoneId);
-    const nature = zone?.nature ?? "ordinary";
-
-    const reservation = args.reservations.find(
-      (r) => r.worksiteId === otherId && !r.releasedAt && r.expiresAt > now,
-    );
-    const reason = reasonForCollision({
-      degree: collision.degree,
-      zoneNature: nature,
-      zoneName: zone?.name,
-      until: reservation?.expiresAt ?? zone?.frozenTo,
-      reservedByIssueKey: reservation ? other.worksite.issueKey : undefined,
-      locale,
-    });
-    const advice = adviceForCollision({
-      degree: collision.degree,
-      zoneNature: nature,
-      zoneName: zone?.name,
-      neighborIssueKey: other.worksite.issueKey,
-      neighborPrOpen: other.worksite.prOpen,
-      hardMode: args.hardMode,
-      locale,
-    });
-
-    infos.push({
-      collisionId: collision.id,
-      degree: collision.degree,
-      zoneName: zone?.name,
-      zoneNature: nature,
-      path: collision.path,
-      neighbor,
-      reason,
-      advice,
-      estimatedResumeMinutes: estimateResume(
-        args.reservations,
-        otherId,
-        other.worksite.prOpen,
-        now,
-      ),
-      sameTicket: other.worksite.issueKey === args.subject.issueKey,
-      samePilot: other.worksite.accountId === args.subject.accountId,
-      probable: collision.probable,
-      hardDeny:
-        args.hardMode &&
-        collision.degree === 4 &&
-        (nature === "exclusive" || nature === "frozen" || reservation !== undefined),
-    });
+    const info = await collisionInfoFor(ctx, args, collision, locale, now);
+    if (info) infos.push(info);
   }
 
   infos.sort((a, b) => b.degree - a.degree);
-
-  const pendingNotices = await ctx.stores.notices.pendingFor([args.subject.id]);
-  if (args.deliverNotices) {
-    for (const n of pendingNotices) {
-      await ctx.stores.notices.markDelivered(n.noticeId, args.subject.id, now);
-    }
-  }
-
+  const pendingNotices = await pendingForSubject(
+    ctx,
+    args.subject.id,
+    args.deliverNotices === true,
+  );
   const kind = verdictKindFor(infos, args.hardMode);
   const text = formatVerdictText(
     {

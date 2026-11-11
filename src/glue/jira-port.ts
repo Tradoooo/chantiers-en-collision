@@ -31,6 +31,7 @@ import { asApp, requestJira, route } from "@forge/api";
 import type { APIResponse, RequestInit, RequestProductMethod } from "@forge/api";
 import type { Route } from "@forge/api";
 import type { MergedTicketHistory, TicketMeta, Worksite } from "../core/types";
+import type { JiraPort } from "../services/ctx";
 import { normalizeSlug } from "../services/shared";
 import type { Stores } from "../storage/interfaces";
 
@@ -151,91 +152,114 @@ function makeFieldIdResolver(request: RequestProductMethod): () => Promise<strin
   };
 }
 
+/** What the six port methods share: how to call Jira, and whose data it is. */
+interface JiraClient {
+  request: RequestProductMethod;
+  /** Resolved `customfield_xxxxx` id of the "Collisions" field (best effort). */
+  fieldId(): Promise<string | undefined>;
+  stores: Stores;
+  projectId: string;
+}
+
+async function searchIssues(client: JiraClient, jql: string): Promise<TicketMeta[]> {
+  const { ok, json } = await call(client.request, route`/rest/api/3/search/jql`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ jql, fields: SEARCH_FIELDS, maxResults: MAX_RESULTS }),
+  });
+  if (!ok) return [];
+  return list(rec(json).issues)
+    .map(toTicketMeta)
+    .filter((ticket) => ticket.issueKey !== "");
+}
+
+async function getIssue(client: JiraClient, issueKey: string): Promise<TicketMeta | undefined> {
+  const key = encodeURIComponent(issueKey);
+  const { ok, json } = await call(
+    client.request,
+    route`/rest/api/3/issue/${key}?fields=${SEARCH_FIELDS.join(",")}`,
+  );
+  return ok ? toTicketMeta(json) : undefined;
+}
+
+async function setCollisionsField(
+  client: JiraClient,
+  issueKey: string,
+  value: string,
+): Promise<void> {
+  const id = await client.fieldId();
+  if (id === undefined) return; // field not resolvable: skip, never fatal
+  const key = encodeURIComponent(issueKey);
+  await call(client.request, route`/rest/api/3/issue/${key}`, {
+    method: "PUT",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ fields: { [id]: value } }),
+  });
+}
+
+/** "is blocked by": inwardIssue is the blocked ticket, outwardIssue the blocker. */
+async function createIssueLink(
+  client: JiraClient,
+  blocked: string,
+  blocker: string,
+): Promise<void> {
+  await call(client.request, route`/rest/api/3/issueLink`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({
+      type: { name: BLOCK_LINK_TYPE },
+      inwardIssue: { key: blocked },
+      outwardIssue: { key: blocker },
+    }),
+  });
+}
+
+async function commentOnIssue(client: JiraClient, issueKey: string, body: string): Promise<void> {
+  const key = encodeURIComponent(issueKey);
+  await call(client.request, route`/rest/api/3/issue/${key}/comment`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ body: adfFromText(body) }),
+  });
+}
+
+async function mergedHistory(client: JiraClient, repoSlug: string): Promise<MergedTicketHistory[]> {
+  const repo = await client.stores.repos.findBySlug(client.projectId, normalizeSlug(repoSlug));
+  if (repo === undefined) return [];
+  const byIssue = new Map<string, MergedTicketHistory>();
+  for (const id of await candidateWorksiteIds(client.stores, repo.id)) {
+    const worksite = await client.stores.worksites.findById(id);
+    if (!isMergedInRepo(worksite, repo.id)) continue;
+    const entry = await historyOf(client.stores, worksite as Worksite);
+    if (entry === undefined) continue;
+    const previous = byIssue.get(entry.issueKey);
+    if (previous === undefined || previous.paths.length < entry.paths.length) {
+      byIssue.set(entry.issueKey, entry);
+    }
+    if (byIssue.size >= HISTORY_MAX_TICKETS) break;
+  }
+  return [...byIssue.values()];
+}
+
 /**
  * Build the JiraPort bound to one invocation context. Every method is best
  * effort: a Jira failure never breaks a verdict, a panel or a hook response.
  */
-export function makeJiraPort(options: JiraPortOptions) {
+export function makeJiraPort(options: JiraPortOptions): JiraPort {
   const request: RequestProductMethod = options.accountId ? requestJira : asApp().requestJira;
-  const fieldId = makeFieldIdResolver(request);
-  const { stores, projectId } = options;
-
-  async function searchIssues(jql: string): Promise<TicketMeta[]> {
-    const { ok, json } = await call(request, route`/rest/api/3/search/jql`, {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ jql, fields: SEARCH_FIELDS, maxResults: MAX_RESULTS }),
-    });
-    if (!ok) return [];
-    return list(rec(json).issues).map(toTicketMeta).filter((t) => t.issueKey !== "");
-  }
-
-  async function getIssue(issueKey: string): Promise<TicketMeta | undefined> {
-    const key = encodeURIComponent(issueKey);
-    const { ok, json } = await call(
-      request,
-      route`/rest/api/3/issue/${key}?fields=${SEARCH_FIELDS.join(",")}`,
-    );
-    return ok ? toTicketMeta(json) : undefined;
-  }
-
-  async function setCollisionsField(issueKey: string, value: string): Promise<void> {
-    const id = await fieldId();
-    if (id === undefined) return; // field not resolvable: skip, never fatal
-    const key = encodeURIComponent(issueKey);
-    await call(request, route`/rest/api/3/issue/${key}`, {
-      method: "PUT",
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ fields: { [id]: value } }),
-    });
-  }
-
-  async function createIssueLink(blocked: string, blocker: string): Promise<void> {
-    await call(request, route`/rest/api/3/issueLink`, {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify({
-        type: { name: BLOCK_LINK_TYPE },
-        inwardIssue: { key: blocked },
-        outwardIssue: { key: blocker },
-      }),
-    });
-  }
-
-  async function commentOnIssue(issueKey: string, body: string): Promise<void> {
-    const key = encodeURIComponent(issueKey);
-    await call(request, route`/rest/api/3/issue/${key}/comment`, {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ body: adfFromText(body) }),
-    });
-  }
-
-  async function mergedHistory(repoSlug: string): Promise<MergedTicketHistory[]> {
-    const repo = await stores.repos.findBySlug(projectId, normalizeSlug(repoSlug));
-    if (repo === undefined) return [];
-    const byIssue = new Map<string, MergedTicketHistory>();
-    for (const id of await candidateWorksiteIds(stores, repo.id)) {
-      const worksite = await stores.worksites.findById(id);
-      if (!isMergedInRepo(worksite, repo.id)) continue;
-      const entry = await historyOf(stores, worksite as Worksite);
-      if (entry === undefined) continue;
-      const previous = byIssue.get(entry.issueKey);
-      if (previous === undefined || previous.paths.length < entry.paths.length) {
-        byIssue.set(entry.issueKey, entry);
-      }
-      if (byIssue.size >= HISTORY_MAX_TICKETS) break;
-    }
-    return [...byIssue.values()];
-  }
-
+  const client: JiraClient = {
+    request,
+    fieldId: makeFieldIdResolver(request),
+    stores: options.stores,
+    projectId: options.projectId,
+  };
   return {
-    searchIssues,
-    getIssue,
-    setCollisionsField,
-    createIssueLink,
-    commentOnIssue,
-    mergedHistory,
+    searchIssues: (jql) => searchIssues(client, jql),
+    getIssue: (issueKey) => getIssue(client, issueKey),
+    setCollisionsField: (issueKey, value) => setCollisionsField(client, issueKey, value),
+    createIssueLink: (blocked, blocker) => createIssueLink(client, blocked, blocker),
+    commentOnIssue: (issueKey, body) => commentOnIssue(client, issueKey, body),
+    mergedHistory: (repoSlug) => mergedHistory(client, repoSlug),
   };
 }
 

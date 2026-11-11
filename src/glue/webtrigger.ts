@@ -346,9 +346,11 @@ async function dispatch(
   deps: WebtriggerDeps,
   request: WebtriggerRequest,
 ): Promise<WebtriggerHttpResponse> {
-  void request;
-  if (route === "touch") return await onTouch(body, token, deps);
-  if (route === "open") return await onOpen(body, token, deps);
+  // The repo comes from the X-Chantier-Repo header (spec §9.3), never from
+  // the event body: hook routes carry no repository of their own.
+  const repoSlug = header(request.headers, "x-chantier-repo");
+  if (route === "touch") return await onTouch(body, token, deps, repoSlug);
+  if (route === "open") return await onOpen(body, token, deps, repoSlug);
   if (route === "close") return await onClose(body, token, deps);
   if (route === "ci-footprint") return await onCiFootprint(body, token, deps);
   return await onCiConflict(body, token, deps);
@@ -358,25 +360,28 @@ async function onTouch(
   body: Record<string, unknown>,
   token: HookToken,
   deps: WebtriggerDeps,
+  repoSlug?: string,
 ): Promise<WebtriggerHttpResponse> {
   const sanitized = sanitizeTouch(body);
   if (sanitized === undefined) return emptyResponse();
   const ctx = await deps.buildCtx(
     ctxOptions("touch", token, sanitized.event.sessionRef, sanitized.event.agentRef),
   );
-  return hookJson(sanitized.hookEventName, await deps.hookTouch(ctx, sanitized.event));
+  const event: HookTouchEvent = { ...sanitized.event, repoSlug };
+  return hookJson(sanitized.hookEventName, await deps.hookTouch(ctx, event));
 }
 
 async function onOpen(
   body: Record<string, unknown>,
   token: HookToken,
   deps: WebtriggerDeps,
+  repoSlug?: string,
 ): Promise<WebtriggerHttpResponse> {
   const event = sanitizeOpen(body);
   if (event === undefined) return emptyResponse();
   const issueKey = text(rec(body).issueKey);
   const ctx = await deps.buildCtx(ctxOptions("open", token, event.sessionRef, event.agentRef, issueKey));
-  const result = await deps.hookOpen(ctx, event);
+  const result = await deps.hookOpen(ctx, { ...event, repoSlug });
   return hookJson(HOOK_EVENT_NAMES.open, result.response);
 }
 

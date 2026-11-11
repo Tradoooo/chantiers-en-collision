@@ -9,7 +9,7 @@
  */
 
 import { detectCollisions } from "../core/collisions";
-import { hasThirdPartyReservation } from "../core/degrees";
+
 import { entriesFromPaths, mergeEntries } from "../core/footprints";
 import { entriesOverlap, classifyPath, normalizePath } from "../core/paths";
 import { renderNoticesForAgent } from "../core/notices";
@@ -124,6 +124,74 @@ function hardDenyResponse(ctx: Ctx, reason: string): HookResponse {
   return { deny: { reason } };
 }
 
+/** Record the touched path as OBSERVED evidence (the fact beats the intent). */
+async function recordObserved(ctx: Ctx, worksiteId: string, relPath: string): Promise<void> {
+  const now = ctx.now();
+  const existing = await ctx.stores.footprints.listByWorksite(worksiteId);
+  const incoming = entriesFromPaths(relPath, worksiteId, "observed", "edit", now);
+  const merged = mergeEntries(existing, incoming, now);
+  if (merged.toAdd.length > 0) await ctx.stores.footprints.add(merged.toAdd);
+  await markActivity(ctx, worksiteId);
+  if (merged.mismatches.length > 0) {
+    await logEvent(ctx, "footprint.mismatch", worksiteId, { paths: merged.mismatches });
+  }
+}
+
+function denyReasonText(
+  kind: "frozen" | "reserved",
+  zoneName: string,
+  until?: string,
+  reservedByIssueKey?: string,
+): string {
+  const reason = reasonForCollision({
+    degree: 4,
+    zoneNature: kind === "frozen" ? "frozen" : "exclusive",
+    zoneName,
+    until,
+    reservedByIssueKey,
+    locale: "en",
+  });
+  return (
+    adviceForCollision({
+      degree: 4,
+      zoneNature: kind === "frozen" ? "frozen" : "exclusive",
+      zoneName,
+      neighborIssueKey: reservedByIssueKey ?? "the freeze",
+      hardMode: true,
+      locale: "en",
+    }) + ` (${reason})`
+  );
+}
+
+/** Hard mode (spec §9.3): deny inside a frozen zone or a foreign hard lock. */
+async function hardModeDeny(
+  ctx: Ctx,
+  worksiteId: string,
+  relPath: string,
+  repoId: string,
+): Promise<HookResponse | undefined> {
+  const now = ctx.now();
+  const zones = await ctx.stores.zones.listByRepo(repoId);
+  const zone = zoneForPath(zones, relPath);
+  if (zone && zone.nature === "frozen" && isFrozen(zone, now)) {
+    return hardDenyResponse(ctx, denyReasonText("frozen", zone.name, zone.frozenTo));
+  }
+  const reservations = await ctx.stores.reservations.listActive(repoId, now);
+  const kind = classifyPath(relPath);
+  const blocking = reservations.find(
+    (r) =>
+      r.hard &&
+      r.worksiteId !== worksiteId &&
+      r.patterns.some((p) => entriesOverlap(p, classifyPath(p), relPath, kind)),
+  );
+  if (!blocking) return undefined;
+  const owner = await ctx.stores.worksites.findById(blocking.worksiteId);
+  return hardDenyResponse(
+    ctx,
+    denyReasonText("reserved", blocking.patterns[0] ?? relPath, blocking.expiresAt, owner?.issueKey),
+  );
+}
+
 /** PreToolUse: the path enters the OBSERVED footprint; warn or deny. */
 export async function hookTouch(ctx: Ctx, ev: HookTouchEvent): Promise<HookResponse> {
   try {
@@ -137,73 +205,13 @@ export async function hookTouch(ctx: Ctx, ev: HookTouchEvent): Promise<HookRespo
     const w = await ctx.stores.worksites.findBySession(session.id);
     if (!w || w.state === "closed") return {};
 
-    const now = ctx.now();
     const rel = relativize(ev.path, ev.cwd);
-    const existing = await ctx.stores.footprints.listByWorksite(w.id);
-    const incoming = entriesFromPaths(rel, w.id, "observed", "edit", now);
-    const merged = mergeEntries(existing, incoming, now);
-    if (merged.toAdd.length > 0) await ctx.stores.footprints.add(merged.toAdd);
-    await markActivity(ctx, w.id);
-    if (merged.mismatches.length > 0) {
-      await logEvent(ctx, "footprint.mismatch", w.id, { paths: merged.mismatches });
-    }
+    await recordObserved(ctx, w.id, rel);
 
     const rules = await rulesFor(ctx);
-    const zones = await ctx.stores.zones.listByRepo(w.repoId);
-    const reservations = await ctx.stores.reservations.listActive(w.repoId, now);
-
-    // Hard mode: deny inside a frozen zone or a hard reservation held by
-    // ANOTHER worksite (spec §9.3 "mode dur").
     if (rules.hardMode) {
-      const zone = zoneForPath(zones, rel);
-      if (zone && zone.nature === "frozen" && isFrozen(zone, now)) {
-        const reason = reasonForCollision({
-          degree: 4,
-          zoneNature: "frozen",
-          zoneName: zone.name,
-          until: zone.frozenTo,
-          locale: "en",
-        });
-        return hardDenyResponse(ctx, adviceForCollision({
-          degree: 4,
-          zoneNature: "frozen",
-          zoneName: zone.name,
-          neighborIssueKey: "the freeze",
-          hardMode: true,
-          locale: "en",
-        }) + ` (${reason})`);
-      }
-      const foreignHard = hasThirdPartyReservation(
-        reservations.filter((r) => r.hard),
-        [w.id, ""],
-        rel,
-        now,
-      );
-      if (foreignHard) {
-        const blocking = reservations.find(
-          (r) => r.hard && r.worksiteId !== w.id && !r.releasedAt && r.expiresAt > now &&
-            r.patterns.some((p) => entriesOverlap(p, classifyPath(p), rel, classifyPath(rel))),
-        );
-        const owner = blocking
-          ? await ctx.stores.worksites.findById(blocking.worksiteId)
-          : undefined;
-        const reason = reasonForCollision({
-          degree: 4,
-          zoneNature: "exclusive",
-          zoneName: blocking ? blocking.patterns[0] : rel,
-          until: blocking?.expiresAt,
-          reservedByIssueKey: owner?.issueKey,
-          locale: "en",
-        });
-        return hardDenyResponse(ctx, adviceForCollision({
-          degree: 4,
-          zoneNature: "exclusive",
-          zoneName: blocking ? blocking.patterns[0] : rel,
-          neighborIssueKey: owner?.issueKey ?? "another worksite",
-          hardMode: true,
-          locale: "en",
-        }) + ` (${reason})`);
-      }
+      const denied = await hardModeDeny(ctx, w.id, rel, w.repoId);
+      if (denied) return denied;
     }
 
     const fresh = (await ctx.stores.worksites.findById(w.id)) ?? w;

@@ -43,6 +43,75 @@ function callerSide(ctx: Ctx, a: Worksite, b: Worksite): [Worksite, Worksite] {
   return [a, b];
 }
 
+async function planHandover(
+  ctx: Ctx,
+  collision: { repoId: string; path: string },
+  wa: Worksite,
+  wb: Worksite,
+  choice: "wait" | "sequence",
+): Promise<Partial<ResolutionOutcome>> {
+  const rules = await rulesFor(ctx);
+  const [ya, yb] = await Promise.all([yieldContext(ctx, wa), yieldContext(ctx, wb)]);
+  const yields = whoYields(ya, yb, rules) === "a" ? wa : wb;
+  const blocker = yields.id === wa.id ? wb : wa;
+  const out: Partial<ResolutionOutcome> = { yieldsWorksiteId: yields.id };
+  if (choice === "sequence") {
+    out.linkToCreate = {
+      blockedIssueKey: yields.issueKey,
+      blockerIssueKey: blocker.issueKey,
+    };
+    if (ctx.jira) {
+      await ctx.jira.createIssueLink(yields.issueKey, blocker.issueKey).catch(() => undefined);
+    }
+  }
+  void collision;
+  return out;
+}
+
+async function coordinateWithNeighbour(
+  ctx: Ctx,
+  collision: { repoId: string; path: string; degree: number },
+  wa: Worksite,
+  wb: Worksite,
+  reason?: string,
+): Promise<{ noticeSent: boolean }> {
+  const [mine, other] = callerSide(ctx, wa, wb);
+  await ctx.stores.notices.post(
+    {
+      worksiteId: mine.id,
+      repoId: collision.repoId,
+      authorAccountId: ctx.identity.accountId,
+      issueKey: mine.issueKey,
+      paths: [collision.path],
+      text: `Let's coordinate on ${collision.path} (D${collision.degree}).${
+        reason ? ` ${reason}` : ""
+      }`,
+      createdAt: ctx.now(),
+    },
+    [other.id],
+  );
+  return { noticeSent: true };
+}
+
+function splitDraft(
+  collision: { path: string },
+  wa: Worksite,
+  wb: Worksite,
+  reason?: string,
+): NonNullable<ResolutionOutcome["splitTicketDraft"]> {
+  return {
+    summary: `Extract shared change: ${collision.path}`,
+    description: [
+      `Split from the collision between ${wa.issueKey} and ${wb.issueKey}.`,
+      `The common part (${collision.path}) is done here, first, then both continue.`,
+      reason ? `Reason: ${reason}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    paths: [collision.path],
+  };
+}
+
 export async function resolveCollision(
   ctx: Ctx,
   input: ResolveInput,
@@ -67,57 +136,14 @@ export async function resolveCollision(
   };
 
   if (input.choice === "wait" || input.choice === "sequence") {
-    const rules = await rulesFor(ctx);
-    const [ya, yb] = await Promise.all([yieldContext(ctx, wa), yieldContext(ctx, wb)]);
-    const yields = whoYields(ya, yb, rules) === "a" ? wa : wb;
-    const blocker = yields.id === wa.id ? wb : wa;
-    outcome.yieldsWorksiteId = yields.id;
-    if (input.choice === "sequence") {
-      outcome.linkToCreate = {
-        blockedIssueKey: yields.issueKey,
-        blockerIssueKey: blocker.issueKey,
-      };
-      if (ctx.jira) {
-        await ctx.jira
-          .createIssueLink(yields.issueKey, blocker.issueKey)
-          .catch(() => undefined);
-      }
-    }
+    Object.assign(outcome, await planHandover(ctx, collision, wa, wb, input.choice));
   }
-
   if (input.choice === "coordinate") {
-    const [mine, other] = callerSide(ctx, wa, wb);
-    await ctx.stores.notices.post(
-      {
-        worksiteId: mine.id,
-        repoId: collision.repoId,
-        authorAccountId: ctx.identity.accountId,
-        issueKey: mine.issueKey,
-        paths: [collision.path],
-        text: `Let's coordinate on ${collision.path} (D${collision.degree}).${
-          input.reason ? ` ${input.reason}` : ""
-        }`,
-        createdAt: ctx.now(),
-      },
-      [other.id],
-    );
-    outcome.noticeSent = true;
+    Object.assign(outcome, await coordinateWithNeighbour(ctx, collision, wa, wb, input.reason));
   }
-
   if (input.choice === "split") {
-    outcome.splitTicketDraft = {
-      summary: `Extract shared change: ${collision.path}`,
-      description: [
-        `Split from the collision between ${wa.issueKey} and ${wb.issueKey}.`,
-        `The common part (${collision.path}) is done here, first, then both continue.`,
-        input.reason ? `Reason: ${input.reason}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-      paths: [collision.path],
-    };
+    outcome.splitTicketDraft = splitDraft(collision, wa, wb, input.reason);
   }
-
   // "merge": same file, same goal — one worksite does both; recording the
   // choice is enough, the team closes the duplicate ticket by hand.
 

@@ -18,6 +18,7 @@ import type {
   SprintCheckData,
   TicketMeta,
   WavePlan,
+  Zone,
 } from "../core/types";
 import type { Ctx } from "./ctx";
 import { loadOpenWorksites, resolveRepo } from "./shared";
@@ -184,6 +185,41 @@ export async function planParallelWork(
   return planWaves(plans, Math.max(1, input.workers), { zones });
 }
 
+/** Score every ticket pair through the real detector; keep D2+ pairs. */
+async function riskyPairsOf(
+  plans: PlanTicket[],
+  zones: Zone[],
+  repoId: string,
+  now: string,
+): Promise<SprintCheckData["riskyPairs"]> {
+  const sides = virtualSides(plans, repoId);
+  const out: SprintCheckData["riskyPairs"] = [];
+  const seen = new Set<string>();
+  for (const side of sides) {
+    for (const d of detectCollisions(side, sides, {
+      zones,
+      reservations: [],
+      now,
+      hardMode: false,
+    })) {
+      if (d.degree < 2) continue;
+      const key = `${d.worksiteA}|${d.worksiteB}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const a = sides.find((s) => s.worksite.id === d.worksiteA);
+      const b = sides.find((s) => s.worksite.id === d.worksiteB);
+      out.push({
+        a: a?.worksite.issueKey ?? d.worksiteA,
+        b: b?.worksite.issueKey ?? d.worksiteB,
+        degree: d.degree,
+        path: d.path,
+        zoneName: zones.find((z) => z.id === d.zoneId)?.name,
+      });
+    }
+  }
+  return out;
+}
+
 /** Sprint verification: risky pairs, hinges, suggested order (CC-19). */
 export async function sprintCheck(
   ctx: Ctx,
@@ -203,33 +239,7 @@ export async function sprintCheck(
   const plans: PlanTicket[] = [];
   for (const t of tickets) plans.push(await planTicketFor(ctx, t, repo.id, repo.slug));
 
-  // Risky pairs: score every ticket pair through the real detector.
-  const sides = virtualSides(plans, repo.id);
-  const riskyPairs: SprintCheckData["riskyPairs"] = [];
-  const seen = new Set<string>();
-  for (const side of sides) {
-    for (const d of detectCollisions(side, sides, {
-      zones,
-      reservations: [],
-      now: ctx.now(),
-      hardMode: false,
-    })) {
-      if (d.degree < 2) continue;
-      const key = `${d.worksiteA}|${d.worksiteB}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const a = sides.find((s) => s.worksite.id === d.worksiteA);
-      const b = sides.find((s) => s.worksite.id === d.worksiteB);
-      riskyPairs.push({
-        a: a?.worksite.issueKey ?? d.worksiteA,
-        b: b?.worksite.issueKey ?? d.worksiteB,
-        degree: d.degree,
-        path: d.path,
-        zoneName: zones.find((z) => z.id === d.zoneId)?.name,
-      });
-    }
-  }
-
+  const riskyPairs = await riskyPairsOf(plans, zones, repo.id, ctx.now());
   const plan = planWaves(plans, Math.max(plans.length, 1), { zones });
   return {
     tickets: plans,

@@ -5,7 +5,7 @@
  */
 
 import { computeDegree, hasThirdPartyReservation } from "./degrees";
-import { entriesOverlap, literalPrefix, matchesGlob, normalizePath } from "./paths";
+import { classifyPath, entriesOverlap, literalPrefix, matchesGlob, normalizePath } from "./paths";
 import { isFrozen, zoneForPath } from "./zones";
 import type {
   Collision,
@@ -177,6 +177,47 @@ function sharedZoneDegree(
   return { degree, raw, probable };
 }
 
+/**
+ * Reservation-driven collisions: an active reservation of `other` covering a
+ * subject entry is D4 even when `other` declared no footprint at all
+ * (a reservation is a claim on the ground — spec §8 "Attendre").
+ */
+function addReservationDrafts(
+  subject: WorksiteWithEntries,
+  other: WorksiteWithEntries,
+  opts: DetectOptions,
+  byZone: Map<string, CollisionDraft>,
+): void {
+  const theirs = opts.reservations.filter(
+    (r) => r.worksiteId === other.worksite.id && !r.releasedAt && r.expiresAt > opts.now,
+  );
+  if (theirs.length === 0) return;
+  const [aId, bId] = normalizePair(subject.worksite.id, other.worksite.id);
+  const predictedOnly = isPredictedOnly(subject) || isPredictedOnly(other);
+  for (const r of theirs) {
+    for (const e of subject.entries) {
+      if (isOutOfScope(e.path, opts.zones)) continue;
+      const hit = r.patterns.some((p) => entriesOverlap(p, classifyPath(p), e.path, e.kind));
+      if (!hit) continue;
+      const path = normalizePath(e.path);
+      const zone = zoneForPath(opts.zones, path);
+      const key = zone?.id ?? "";
+      const draft: CollisionDraft = {
+        repoId: subject.worksite.repoId,
+        worksiteA: aId,
+        worksiteB: bId,
+        zoneId: zone?.id,
+        path,
+        degree: predictedOnly ? 1 : 4,
+        rawDegree: 4,
+        phase: phaseFor(subject.worksite, other.worksite, predictedOnly),
+        probable: predictedOnly || undefined,
+      };
+      if (betterDraft(draft, byZone.get(key))) byZone.set(key, draft);
+    }
+  }
+}
+
 /** D0 (or D4 on exclusive/frozen) drafts for shared zones without overlap. */
 function sharedZoneDrafts(
   subject: WorksiteWithEntries,
@@ -225,6 +266,7 @@ export function detectCollisions(
     if (other.worksite.id === subject.worksite.id) continue;
     if (other.worksite.state === "closed") continue;
     const byZone = overlapDrafts(subject, other, opts);
+    addReservationDrafts(subject, other, opts, byZone);
     sharedZoneDrafts(subject, other, opts, byZone);
     drafts.push(...byZone.values());
   }

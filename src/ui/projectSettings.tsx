@@ -26,6 +26,7 @@ import ForgeUI, {
   Toggle,
   useAction,
 } from "@forge/ui";
+import type { ActionRouter } from "./issuePanel";
 import type {
   PriorityCriterion,
   PriorityRules,
@@ -68,9 +69,14 @@ export interface ActionMessage {
 
 export type ActionSender = (key: ActionKey, payload?: Record<string, unknown>) => void;
 
-export function useActionBridge(): ActionSender {
+export function useActionBridge(router?: ActionRouter): ActionSender {
   const [, dispatch] = useAction<ActionMessage | null, ActionMessage>(
-    (_previous, next) => next,
+    async (_previous, next) => {
+      if (router !== undefined && next !== null) {
+        await router.route(next.key, next.payload);
+      }
+      return next;
+    },
     null,
   );
   return (key, payload) => dispatch({ key, payload });
@@ -320,8 +326,9 @@ export function ProjectSettings(props: {
   rules: PriorityRules;
   hooksFile: string;
   ciSnippets: { name: string; content: string }[];
+  actions?: ActionRouter;
 }) {
-  const send = useActionBridge();
+  const send = useActionBridge(props.actions);
   return (
     <Fragment>
       <Heading size="large">Project settings</Heading>

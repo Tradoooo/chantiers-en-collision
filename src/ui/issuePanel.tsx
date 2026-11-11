@@ -37,12 +37,22 @@ export interface ActionRequest {
 
 /**
  * Bridge from a screen to the resolver. Each user gesture records the exact
- * resolver key plus its payload; the glue replays that request and hands the
- * fresh data back as props. Shared by every screen in src/ui.
+ * resolver key plus its payload; when the glue injected its action router
+ * (props.actions), the gesture is replayed server-side against the real
+ * services. Shared by every screen in src/ui.
  */
-export function useActionRequest() {
+export interface ActionRouter {
+  route(key: string, payload?: Record<string, unknown>): Promise<unknown>;
+}
+
+export function useActionRequest(router?: ActionRouter) {
   const [, dispatch] = useAction<ActionRequest, ActionRequest>(
-    (_previous, request) => request,
+    async (_previous, request) => {
+      if (router !== undefined && request.key !== "") {
+        await router.route(request.key, request.payload);
+      }
+      return request;
+    },
     { key: "", payload: {} },
   );
   return (key: string, payload: Record<string, unknown> = {}): void => {
@@ -71,7 +81,12 @@ export type RepoPanel = WorksitePanel["repos"][number];
 /* Panel                                                              */
 /* ------------------------------------------------------------------ */
 
-export function IssuePanel(props: { panel: WorksitePanel; zones: Zone[]; now: string }) {
+export function IssuePanel(props: {
+  panel: WorksitePanel;
+  zones: Zone[];
+  now: string;
+  actions?: ActionRouter;
+}) {
   const { panel } = props;
   if (panel.repos.length === 0) {
     return (
@@ -92,6 +107,7 @@ export function IssuePanel(props: { panel: WorksitePanel; zones: Zone[]; now: st
           zones={props.zones}
           now={props.now}
           issueKey={panel.issueKey}
+          actions={props.actions}
         />
       ))}
     </Fragment>
@@ -107,6 +123,7 @@ function RepoSection(props: {
   issueKey: string;
   zones: Zone[];
   now: string;
+  actions?: ActionRouter;
 }) {
   const { block } = props;
   const mine = block.worksites.map((w: Worksite) => w.id);
@@ -123,6 +140,7 @@ function RepoSection(props: {
         neighbors={block.neighbors}
         mine={mine}
         zones={props.zones}
+        actions={props.actions}
       />
       <Text>Notices received</Text>
       <NoticeInbox notices={block.noticesInbox} />
@@ -135,6 +153,7 @@ function RepoSection(props: {
         repoId={block.repo.id}
         zones={props.zones}
         predicted={block.footprintsBySource.predicted ?? []}
+        actions={props.actions}
       />
     </SectionCard>
   );
@@ -211,8 +230,9 @@ function CollisionsBlock(props: {
   neighbors: NeighborInfo[];
   mine: string[];
   zones: Zone[];
+  actions?: ActionRouter;
 }) {
-  const call = useActionRequest();
+  const call = useActionRequest(props.actions);
   const open = props.collisions.filter((c) => c.state === "open");
   if (open.length === 0) {
     return <Text>No collision on this repository. The ground is free.</Text>;
@@ -459,8 +479,9 @@ function IWorkOnIt(props: {
   repoId: string;
   zones: Zone[];
   predicted: FootprintEntry[];
+  actions?: ActionRouter;
 }) {
-  const call = useActionRequest();
+  const call = useActionRequest(props.actions);
   const repoZones = props.zones.filter((z) => z.repoId === props.repoId);
   const preselected = predictedZoneIds(props.zones, props.predicted);
   return (

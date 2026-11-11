@@ -136,7 +136,7 @@ describe("sanitization (§17)", () => {
 
     expect(spies.hookTouch).toHaveBeenCalledTimes(1);
     const event = spies.hookTouch.mock.calls[0][1] as Record<string, unknown>;
-    expect(Object.keys(event).sort()).toEqual(["cwd", "path", "sessionRef"]);
+    expect(Object.keys(event).sort()).toEqual(["cwd", "path", "repoSlug", "sessionRef"]);
     expect(event.path).toBe("/home/dev/billing/src/billing/invoice.ts");
     expect(event.sessionRef).toBe("sess-42");
     expect(event.cwd).toBe("/home/dev/billing");

@@ -27,7 +27,7 @@ import type {
   SimulationStepResult,
 } from "../core/types";
 import { VerdictBlock } from "./components";
-import { useActionRequest } from "./issuePanel";
+import { useActionRequest, type ActionRouter } from "./issuePanel";
 
 /** Resolver key: run one scenario and return its step results. */
 export const ACTION_RUN = "simulation.run";
@@ -54,8 +54,9 @@ function expectedText(step: SimulationStep): string {
 export function SimulationConsole(props: {
   scenarios: SimulationScenario[];
   result?: SimulationResult;
+  actions?: ActionRouter;
 }) {
-  const call = useActionRequest();
+  const call = useActionRequest(props.actions);
   if (props.scenarios.length === 0) {
     return (
       <SectionMessage appearance="info" title="No scenario available">
