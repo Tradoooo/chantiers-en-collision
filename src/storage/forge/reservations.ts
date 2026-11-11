@@ -92,56 +92,65 @@ async function activeOfRepo(repoId: string, now: string): Promise<Reservation[]>
   return rows.map(toReservation);
 }
 
+async function createReservation(
+  r: Omit<Reservation, "id"> & { id?: string },
+): Promise<Reservation> {
+  const reservation: Reservation = { ...r, id: r.id ?? newId("res") };
+  await writeReservation(reservation);
+  return reservation;
+}
+
+async function findReservationById(id: string): Promise<Reservation | undefined> {
+  const row = await one<ReservationRow>`SELECT * FROM reservation WHERE id = ${id}`;
+  return row ? toReservation(row) : undefined;
+}
+
+async function findActiveOverlappingReservations(
+  repoId: string,
+  paths: string[],
+  now: string,
+): Promise<Reservation[]> {
+  if (paths.length === 0) return [];
+  const active = await activeOfRepo(repoId, now);
+  return active.filter((reservation) => overlapsAny(reservation, paths));
+}
+
+async function listReservationsByWorksite(
+  worksiteId: string,
+  now: string,
+): Promise<Reservation[]> {
+  const rows = await all<ReservationRow>`
+    SELECT * FROM reservation WHERE worksite_id = ${worksiteId} ORDER BY created_at DESC`;
+  return rows.filter((row) => isActive(row, now)).map(toReservation);
+}
+
+async function releaseReservation(id: string, now: string): Promise<boolean> {
+  const affected = await run`
+    UPDATE reservation SET released_at = ${now}
+    WHERE id = ${id} AND released_at = ''`;
+  return affected > 0;
+}
+
+async function releaseExpiredReservations(now: string): Promise<Reservation[]> {
+  const rows = await all<ReservationRow>`
+    SELECT * FROM reservation WHERE released_at = '' AND expires_at <= ${now}`;
+  if (rows.length === 0) return [];
+  const ids = rows.map((row) => str(row.id));
+  await runText(
+    `UPDATE reservation SET released_at = ? WHERE id IN (${ids.map(() => "?").join(", ")})`,
+    [now, ...ids],
+  );
+  return rows.map((row) => ({ ...toReservation(row), releasedAt: now }));
+}
+
 export function createReservationStore(): ReservationStore {
   return {
-    async create(r: Omit<Reservation, "id"> & { id?: string }): Promise<Reservation> {
-      const reservation: Reservation = { ...r, id: r.id ?? newId("res") };
-      await writeReservation(reservation);
-      return reservation;
-    },
-
-    async findById(id: string): Promise<Reservation | undefined> {
-      const row = await one<ReservationRow>`SELECT * FROM reservation WHERE id = ${id}`;
-      return row ? toReservation(row) : undefined;
-    },
-
-    listActive(repoId: string, now: string): Promise<Reservation[]> {
-      return activeOfRepo(repoId, now);
-    },
-
-    async findActiveOverlapping(
-      repoId: string,
-      paths: string[],
-      now: string,
-    ): Promise<Reservation[]> {
-      if (paths.length === 0) return [];
-      const active = await activeOfRepo(repoId, now);
-      return active.filter((reservation) => overlapsAny(reservation, paths));
-    },
-
-    async listByWorksite(worksiteId: string, now: string): Promise<Reservation[]> {
-      const rows = await all<ReservationRow>`
-        SELECT * FROM reservation WHERE worksite_id = ${worksiteId} ORDER BY created_at DESC`;
-      return rows.filter((row) => isActive(row, now)).map(toReservation);
-    },
-
-    async release(id: string, now: string): Promise<boolean> {
-      const affected = await run`
-        UPDATE reservation SET released_at = ${now}
-        WHERE id = ${id} AND released_at = ''`;
-      return affected > 0;
-    },
-
-    async releaseExpired(now: string): Promise<Reservation[]> {
-      const rows = await all<ReservationRow>`
-        SELECT * FROM reservation WHERE released_at = '' AND expires_at <= ${now}`;
-      if (rows.length === 0) return [];
-      const ids = rows.map((row) => str(row.id));
-      await runText(
-        `UPDATE reservation SET released_at = ? WHERE id IN (${ids.map(() => "?").join(", ")})`,
-        [now, ...ids],
-      );
-      return rows.map((row) => ({ ...toReservation(row), releasedAt: now }));
-    },
+    create: createReservation,
+    findById: findReservationById,
+    listActive: activeOfRepo,
+    findActiveOverlapping: findActiveOverlappingReservations,
+    listByWorksite: listReservationsByWorksite,
+    release: releaseReservation,
+    releaseExpired: releaseExpiredReservations,
   };
 }

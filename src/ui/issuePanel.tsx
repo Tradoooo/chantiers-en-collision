@@ -9,7 +9,7 @@
 
 import ForgeUI, {
   Badge, Button, Cell, Checkbox, CheckboxGroup, Form, Fragment, Head, Heading,
-  Option, Row, SectionMessage, Select, Table, Text, TextField, useAction,
+  Option, Row, SectionMessage, Select, Table, Text, TextField,
 } from "@forge/ui";
 import type {
   Collision, FootprintCoverage, FootprintEntry, FootprintSource, NeighborInfo,
@@ -28,37 +28,11 @@ export const ACTION_RESOLVE = "collisions.resolve";
 /** Resolver key: declare that I start working on this ticket. */
 export const ACTION_I_WORK_ON_IT = "worksites.iWorkOnIt";
 
-/** One call addressed to the Forge resolver. */
-export interface ActionRequest {
-  /** Resolver key wired in src/index.ts. */
-  key: string;
-  payload: Record<string, unknown>;
-}
-
-/**
- * Bridge from a screen to the resolver. Each user gesture records the exact
- * resolver key plus its payload; when the glue injected its action router
- * (props.actions), the gesture is replayed server-side against the real
- * services. Shared by every screen in src/ui.
- */
-export interface ActionRouter {
-  route(key: string, payload?: Record<string, unknown>): Promise<unknown>;
-}
-
-export function useActionRequest(router?: ActionRouter) {
-  const [, dispatch] = useAction<ActionRequest, ActionRequest>(
-    async (_previous, request) => {
-      if (router !== undefined && request.key !== "") {
-        await router.route(request.key, request.payload);
-      }
-      return request;
-    },
-    { key: "", payload: {} },
-  );
-  return (key: string, payload: Record<string, unknown> = {}): void => {
-    dispatch({ key, payload });
-  };
-}
+// The screen↔resolver bridge lives in ./actions (shared by every screen);
+// re-exported here so existing imports from "./issuePanel" keep working.
+import { useActionRequest, type ActionRouter } from "./actions";
+export { useActionRequest } from "./actions";
+export type { ActionRequest, ActionRouter } from "./actions";
 
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */

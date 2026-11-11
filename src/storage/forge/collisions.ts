@@ -121,96 +121,113 @@ const COLLISION_COLUMNS = [
   "probable",
 ];
 
+async function upsertCollision(draft: CollisionDraft): Promise<Collision> {
+  const [worksiteA, worksiteB] = sortedPair(draft.worksiteA, draft.worksiteB);
+  const zoneId = draft.zoneId ?? "";
+  const detectedAt = draft.detectedAt ?? new Date().toISOString();
+  const existing = await findByKey(draft.repoId, worksiteA, worksiteB, zoneId);
+  // The draft wins when it states a state; otherwise a recorded
+  // resolution is preserved (never silently un-resolved).
+  const state: CollisionState = draft.state ?? (existing ? toCollision(existing).state : "open");
+  const collision: Collision = {
+    ...draft,
+    id: existing ? str(existing.id) : newId("col"),
+    worksiteA,
+    worksiteB,
+    state,
+    detectedAt: existing ? str(existing.detected_at) : detectedAt,
+  };
+  await upsert("collision", collision.id, COLLISION_COLUMNS, collisionValues(collision));
+  return collision;
+}
+
+async function findCollisionById(id: string): Promise<Collision | undefined> {
+  const row = await one<CollisionRow>`SELECT * FROM collision WHERE id = ${id}`;
+  return row ? toCollision(row) : undefined;
+}
+
+async function listCollisionsByRepo(
+  repoId: string,
+  activeOnly?: boolean,
+): Promise<Collision[]> {
+  const rows = activeOnly
+    ? await all<CollisionRow>`
+        SELECT * FROM collision WHERE repo_id = ${repoId} AND state = 'open'
+        ORDER BY detected_at DESC`
+    : await all<CollisionRow>`
+        SELECT * FROM collision WHERE repo_id = ${repoId} ORDER BY detected_at DESC`;
+  return rows.map(toCollision);
+}
+
+async function listCollisionsByWorksite(
+  worksiteId: string,
+  activeOnly?: boolean,
+): Promise<Collision[]> {
+  const rows = activeOnly
+    ? await all<CollisionRow>`
+        SELECT * FROM collision
+        WHERE (worksite_a = ${worksiteId} OR worksite_b = ${worksiteId})
+          AND state = 'open'
+        ORDER BY detected_at DESC`
+    : await all<CollisionRow>`
+        SELECT * FROM collision
+        WHERE worksite_a = ${worksiteId} OR worksite_b = ${worksiteId}
+        ORDER BY detected_at DESC`;
+  return rows.map(toCollision);
+}
+
+async function listCollisionsByIds(ids: string[]): Promise<Collision[]> {
+  if (ids.length === 0) return [];
+  const rows = await all<CollisionRow>`SELECT * FROM collision WHERE id IN (${ids})`;
+  return rows.map(toCollision);
+}
+
+async function resolveCollision(
+  id: string,
+  resolution: Collision["resolution"],
+  resolvedBy: string,
+  reason?: string,
+): Promise<Collision | undefined> {
+  const affected = await run`
+    UPDATE collision
+    SET state = 'resolved', resolution = ${resolution ?? ""},
+        resolved_by = ${resolvedBy}, reason = ${reason ?? ""}
+    WHERE id = ${id}`;
+  if (affected <= 0) return undefined;
+  return findCollisionById(id);
+}
+
+async function countCollisionsByPhase(
+  repoId?: string,
+  since?: string,
+): Promise<Record<string, number>> {
+  let text = `SELECT phase, COUNT(*) AS total FROM collision WHERE 1 = 1`;
+  const params: SqlScalar[] = [];
+  if (repoId) {
+    text += ` AND repo_id = ?`;
+    params.push(repoId);
+  }
+  if (since) {
+    text += ` AND detected_at >= ?`;
+    params.push(since);
+  }
+  text += ` GROUP BY phase`;
+  const rows = await allText<{ phase: string; total: number }>(text, params);
+  const counts: Record<string, number> = {};
+  rows.forEach((row) => {
+    counts[str(row.phase)] = Number(row.total);
+  });
+  return counts;
+}
+
 export function createCollisionStore(): CollisionStore {
   return {
-    async upsert(draft: CollisionDraft): Promise<Collision> {
-      const [worksiteA, worksiteB] = sortedPair(draft.worksiteA, draft.worksiteB);
-      const zoneId = draft.zoneId ?? "";
-      const detectedAt = draft.detectedAt ?? new Date().toISOString();
-      const existing = await findByKey(draft.repoId, worksiteA, worksiteB, zoneId);
-      // The draft wins when it states a state; otherwise a recorded
-      // resolution is preserved (never silently un-resolved).
-      const state: CollisionState = draft.state ?? (existing ? toCollision(existing).state : "open");
-      const collision: Collision = {
-        ...draft,
-        id: existing ? str(existing.id) : newId("col"),
-        worksiteA,
-        worksiteB,
-        state,
-        detectedAt: existing ? str(existing.detected_at) : detectedAt,
-      };
-      await upsert("collision", collision.id, COLLISION_COLUMNS, collisionValues(collision));
-      return collision;
-    },
-
-    async findById(id: string): Promise<Collision | undefined> {
-      const row = await one<CollisionRow>`SELECT * FROM collision WHERE id = ${id}`;
-      return row ? toCollision(row) : undefined;
-    },
-
-    async listByRepo(repoId: string, activeOnly?: boolean): Promise<Collision[]> {
-      const rows = activeOnly
-        ? await all<CollisionRow>`
-            SELECT * FROM collision WHERE repo_id = ${repoId} AND state = 'open'
-            ORDER BY detected_at DESC`
-        : await all<CollisionRow>`
-            SELECT * FROM collision WHERE repo_id = ${repoId} ORDER BY detected_at DESC`;
-      return rows.map(toCollision);
-    },
-
-    async listByWorksite(worksiteId: string, activeOnly?: boolean): Promise<Collision[]> {
-      const rows = activeOnly
-        ? await all<CollisionRow>`
-            SELECT * FROM collision
-            WHERE (worksite_a = ${worksiteId} OR worksite_b = ${worksiteId})
-              AND state = 'open'
-            ORDER BY detected_at DESC`
-        : await all<CollisionRow>`
-            SELECT * FROM collision
-            WHERE worksite_a = ${worksiteId} OR worksite_b = ${worksiteId}
-            ORDER BY detected_at DESC`;
-      return rows.map(toCollision);
-    },
-
-    async listByIds(ids: string[]): Promise<Collision[]> {
-      if (ids.length === 0) return [];
-      const rows = await all<CollisionRow>`SELECT * FROM collision WHERE id IN (${ids})`;
-      return rows.map(toCollision);
-    },
-
-    async resolve(
-      id: string,
-      resolution: Collision["resolution"],
-      resolvedBy: string,
-      reason?: string,
-    ): Promise<Collision | undefined> {
-      const affected = await run`
-        UPDATE collision
-        SET state = 'resolved', resolution = ${resolution ?? ""},
-            resolved_by = ${resolvedBy}, reason = ${reason ?? ""}
-        WHERE id = ${id}`;
-      if (affected <= 0) return undefined;
-      return this.findById(id);
-    },
-
-    async countByPhase(repoId?: string, since?: string): Promise<Record<string, number>> {
-      let text = `SELECT phase, COUNT(*) AS total FROM collision WHERE 1 = 1`;
-      const params: SqlScalar[] = [];
-      if (repoId) {
-        text += ` AND repo_id = ?`;
-        params.push(repoId);
-      }
-      if (since) {
-        text += ` AND detected_at >= ?`;
-        params.push(since);
-      }
-      text += ` GROUP BY phase`;
-      const rows = await allText<{ phase: string; total: number }>(text, params);
-      const counts: Record<string, number> = {};
-      rows.forEach((row) => {
-        counts[str(row.phase)] = Number(row.total);
-      });
-      return counts;
-    },
+    upsert: upsertCollision,
+    findById: findCollisionById,
+    listByRepo: listCollisionsByRepo,
+    listByWorksite: listCollisionsByWorksite,
+    listByIds: listCollisionsByIds,
+    resolve: resolveCollision,
+    countByPhase: countCollisionsByPhase,
   };
 }

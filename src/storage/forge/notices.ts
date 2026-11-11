@@ -116,69 +116,78 @@ async function registerRecipients(noticeId: string, worksiteIds: string[]): Prom
   }
 }
 
+async function postNotice(
+  notice: Omit<Notice, "id"> & { id?: string },
+  recipientWorksiteIds: string[],
+): Promise<Notice> {
+  const stored: Notice = { ...notice, id: notice.id ?? newId("ntc") };
+  await upsert(
+    "notice",
+    stored.id,
+    ["worksite_id", "repo_id", "author_account_id", "issue_key", "paths", "text", "created_at"],
+    [
+      stored.worksiteId,
+      stored.repoId,
+      stored.authorAccountId,
+      stored.issueKey,
+      json(stored.paths),
+      stored.text,
+      stored.createdAt,
+    ],
+  );
+  await registerRecipients(stored.id, recipientWorksiteIds);
+  return stored;
+}
+
+async function listNoticesByWorksite(worksiteId: string): Promise<Notice[]> {
+  const rows = await all<NoticeRow>`
+    SELECT * FROM notice WHERE worksite_id = ${worksiteId} ORDER BY created_at ASC`;
+  return rows.map(toNotice);
+}
+
+async function pendingNoticesFor(worksiteIds: string[]): Promise<NoticeView[]> {
+  if (worksiteIds.length === 0) return [];
+  const recipients = await all<RecipientRow>`
+    SELECT notice_id, worksite_id FROM notice_recipient
+    WHERE worksite_id IN (${worksiteIds}) AND delivered_at = ''`;
+  const noticeIds = Array.from(new Set(recipients.map((row) => str(row.notice_id))));
+  if (noticeIds.length === 0) return [];
+  const notices = await all<NoticeRow>`
+    SELECT * FROM notice WHERE id IN (${noticeIds}) ORDER BY created_at ASC`;
+  const authors = await authorsOf(notices.map((row) => str(row.worksite_id)));
+  return notices.map((row) => {
+    const notice = toNotice(row);
+    const author = authors[notice.worksiteId];
+    return {
+      noticeId: notice.id,
+      fromIssueKey: notice.issueKey,
+      fromActorLabel: actorLabel(
+        notice.authorAccountId,
+        author?.kind ?? "human",
+        author?.sessionRef,
+      ),
+      paths: notice.paths,
+      text: notice.text,
+      createdAt: notice.createdAt,
+    };
+  });
+}
+
+async function markNoticeDelivered(
+  noticeId: string,
+  worksiteId: string,
+  at: string,
+): Promise<void> {
+  await run`
+    UPDATE notice_recipient SET delivered_at = ${at}
+    WHERE notice_id = ${noticeId} AND worksite_id = ${worksiteId} AND delivered_at = ''`;
+}
+
 export function createNoticeStore(): NoticeStore {
   return {
-    async post(
-      notice: Omit<Notice, "id"> & { id?: string },
-      recipientWorksiteIds: string[],
-    ): Promise<Notice> {
-      const stored: Notice = { ...notice, id: notice.id ?? newId("ntc") };
-      await upsert(
-        "notice",
-        stored.id,
-        ["worksite_id", "repo_id", "author_account_id", "issue_key", "paths", "text", "created_at"],
-        [
-          stored.worksiteId,
-          stored.repoId,
-          stored.authorAccountId,
-          stored.issueKey,
-          json(stored.paths),
-          stored.text,
-          stored.createdAt,
-        ],
-      );
-      await registerRecipients(stored.id, recipientWorksiteIds);
-      return stored;
-    },
-
-    async listByWorksite(worksiteId: string): Promise<Notice[]> {
-      const rows = await all<NoticeRow>`
-        SELECT * FROM notice WHERE worksite_id = ${worksiteId} ORDER BY created_at ASC`;
-      return rows.map(toNotice);
-    },
-
-    async pendingFor(worksiteIds: string[]): Promise<NoticeView[]> {
-      if (worksiteIds.length === 0) return [];
-      const recipients = await all<RecipientRow>`
-        SELECT notice_id, worksite_id FROM notice_recipient
-        WHERE worksite_id IN (${worksiteIds}) AND delivered_at = ''`;
-      const noticeIds = Array.from(new Set(recipients.map((row) => str(row.notice_id))));
-      if (noticeIds.length === 0) return [];
-      const notices = await all<NoticeRow>`
-        SELECT * FROM notice WHERE id IN (${noticeIds}) ORDER BY created_at ASC`;
-      const authors = await authorsOf(notices.map((row) => str(row.worksite_id)));
-      return notices.map((row) => {
-        const notice = toNotice(row);
-        const author = authors[notice.worksiteId];
-        return {
-          noticeId: notice.id,
-          fromIssueKey: notice.issueKey,
-          fromActorLabel: actorLabel(
-            notice.authorAccountId,
-            author?.kind ?? "human",
-            author?.sessionRef,
-          ),
-          paths: notice.paths,
-          text: notice.text,
-          createdAt: notice.createdAt,
-        };
-      });
-    },
-
-    async markDelivered(noticeId: string, worksiteId: string, at: string): Promise<void> {
-      await run`
-        UPDATE notice_recipient SET delivered_at = ${at}
-        WHERE notice_id = ${noticeId} AND worksite_id = ${worksiteId} AND delivered_at = ''`;
-    },
+    post: postNotice,
+    listByWorksite: listNoticesByWorksite,
+    pendingFor: pendingNoticesFor,
+    markDelivered: markNoticeDelivered,
   };
 }

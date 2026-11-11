@@ -90,58 +90,63 @@ async function writeSession(session: ActorSession): Promise<void> {
   );
 }
 
+async function touchSession(session: TouchInput): Promise<ActorSession> {
+  const existing = await findByKey(
+    session.accountId,
+    session.client,
+    session.sessionRef,
+    session.agentRef,
+  );
+  const base: ActorSession = existing
+    ? { ...existing, client: session.client, kind: session.kind }
+    : {
+        id: session.id ?? newId("ses"),
+        accountId: session.accountId,
+        kind: session.kind,
+        client: session.client,
+        firstSeen: session.at,
+        lastSeen: session.at,
+      };
+  if (session.sessionRef) base.sessionRef = session.sessionRef;
+  if (session.agentRef) base.agentRef = session.agentRef;
+  if (session.parentSessionId) base.parentSessionId = session.parentSessionId;
+  base.lastSeen = session.at;
+  await writeSession(base);
+  return base;
+}
+
+async function findSessionById(id: string): Promise<ActorSession | undefined> {
+  const row = await one<SessionRow>`SELECT * FROM actor_session WHERE id = ${id}`;
+  return row ? toSession(row) : undefined;
+}
+
+async function findSessionByRef(
+  accountId: string,
+  sessionRef: string,
+  agentRef?: string,
+): Promise<ActorSession | undefined> {
+  const row = await one<SessionRow>`
+    SELECT * FROM actor_session
+    WHERE account_id = ${accountId}
+      AND session_ref = ${sessionRef}
+      AND agent_ref = ${agentRef ?? ""}
+    ORDER BY last_seen DESC`;
+  return row ? toSession(row) : undefined;
+}
+
+async function listSessionsByAccount(accountId: string): Promise<ActorSession[]> {
+  const rows = await all<SessionRow>`
+    SELECT * FROM actor_session
+    WHERE account_id = ${accountId}
+    ORDER BY last_seen DESC`;
+  return rows.map(toSession);
+}
+
 export function createSessionStore(): SessionStore {
   return {
-    async touch(session: TouchInput): Promise<ActorSession> {
-      const existing = await findByKey(
-        session.accountId,
-        session.client,
-        session.sessionRef,
-        session.agentRef,
-      );
-      const base: ActorSession = existing
-        ? { ...existing, client: session.client, kind: session.kind }
-        : {
-            id: session.id ?? newId("ses"),
-            accountId: session.accountId,
-            kind: session.kind,
-            client: session.client,
-            firstSeen: session.at,
-            lastSeen: session.at,
-          };
-      if (session.sessionRef) base.sessionRef = session.sessionRef;
-      if (session.agentRef) base.agentRef = session.agentRef;
-      if (session.parentSessionId) base.parentSessionId = session.parentSessionId;
-      base.lastSeen = session.at;
-      await writeSession(base);
-      return base;
-    },
-
-    async findById(id: string): Promise<ActorSession | undefined> {
-      const row = await one<SessionRow>`SELECT * FROM actor_session WHERE id = ${id}`;
-      return row ? toSession(row) : undefined;
-    },
-
-    async findByRef(
-      accountId: string,
-      sessionRef: string,
-      agentRef?: string,
-    ): Promise<ActorSession | undefined> {
-      const row = await one<SessionRow>`
-        SELECT * FROM actor_session
-        WHERE account_id = ${accountId}
-          AND session_ref = ${sessionRef}
-          AND agent_ref = ${agentRef ?? ""}
-        ORDER BY last_seen DESC`;
-      return row ? toSession(row) : undefined;
-    },
-
-    async listByAccount(accountId: string): Promise<ActorSession[]> {
-      const rows = await all<SessionRow>`
-        SELECT * FROM actor_session
-        WHERE account_id = ${accountId}
-        ORDER BY last_seen DESC`;
-      return rows.map(toSession);
-    },
+    touch: touchSession,
+    findById: findSessionById,
+    findByRef: findSessionByRef,
+    listByAccount: listSessionsByAccount,
   };
 }

@@ -72,61 +72,84 @@ function merged(existing: FootprintEntry, input: FootprintEntryInput, at: string
   return entry;
 }
 
+function repoOfWorksite(data: MemoryData, worksiteId: string): string | undefined {
+  return data.worksites.get(worksiteId)?.repoId;
+}
+
+async function addFootprints(
+  data: MemoryData,
+  entries: FootprintEntryInput[],
+): Promise<FootprintEntry[]> {
+  const out = new Map<string, FootprintEntry>();
+  for (const input of entries) {
+    const key = footprintKey(input.worksiteId, input.path);
+    const at = input.at ?? nowIso();
+    const known = data.footprints.get(key);
+    const stored = known ? merged(known, input, at) : fromInput(input, at);
+    data.footprints.set(key, stored);
+    out.set(key, stored);
+  }
+  return [...out.values()].map((entry) => clone(entry));
+}
+
+async function listFootprintsByWorksite(
+  data: MemoryData,
+  worksiteId: string,
+): Promise<FootprintEntry[]> {
+  const out: FootprintEntry[] = [];
+  for (const entry of data.footprints.values()) {
+    if (entry.worksiteId === worksiteId) out.push(clone(entry));
+  }
+  return out;
+}
+
+async function findOverlappingFootprints(
+  data: MemoryData,
+  repoId: string,
+  path: string,
+  kind?: PathKind,
+): Promise<FootprintEntry[]> {
+  const wanted = kind ?? classifyPath(path);
+  const out: FootprintEntry[] = [];
+  for (const entry of data.footprints.values()) {
+    if (repoOfWorksite(data, entry.worksiteId) !== repoId) continue;
+    if (!entriesOverlap(entry.path, entry.kind, path, wanted)) continue;
+    out.push(clone(entry));
+  }
+  return out;
+}
+
+async function removeFootprintsByWorksite(
+  data: MemoryData,
+  worksiteId: string,
+  source?: FootprintSource,
+): Promise<number> {
+  let removed = 0;
+  for (const [key, entry] of [...data.footprints.entries()]) {
+    if (entry.worksiteId !== worksiteId) continue;
+    if (source !== undefined && entry.source !== source) continue;
+    data.footprints.delete(key);
+    removed += 1;
+  }
+  return removed;
+}
+
+async function footprintCoverage(data: MemoryData, worksiteId: string): Promise<FootprintCoverage> {
+  const out: FootprintCoverage = {};
+  for (const entry of data.footprints.values()) {
+    if (entry.worksiteId !== worksiteId) continue;
+    out[entry.source] = (out[entry.source] ?? 0) + 1;
+  }
+  return out;
+}
+
 export function createFootprintStore(data: MemoryData): FootprintStore {
-  const repoOf = (worksiteId: string): string | undefined =>
-    data.worksites.get(worksiteId)?.repoId;
-
   return {
-    async add(entries: FootprintEntryInput[]): Promise<FootprintEntry[]> {
-      const out = new Map<string, FootprintEntry>();
-      for (const input of entries) {
-        const key = footprintKey(input.worksiteId, input.path);
-        const at = input.at ?? nowIso();
-        const known = data.footprints.get(key);
-        const stored = known ? merged(known, input, at) : fromInput(input, at);
-        data.footprints.set(key, stored);
-        out.set(key, stored);
-      }
-      return [...out.values()].map((entry) => clone(entry));
-    },
-
-    async listByWorksite(worksiteId: string): Promise<FootprintEntry[]> {
-      const out: FootprintEntry[] = [];
-      for (const entry of data.footprints.values()) {
-        if (entry.worksiteId === worksiteId) out.push(clone(entry));
-      }
-      return out;
-    },
-
-    async findOverlapping(repoId: string, path: string, kind?: PathKind): Promise<FootprintEntry[]> {
-      const wanted = kind ?? classifyPath(path);
-      const out: FootprintEntry[] = [];
-      for (const entry of data.footprints.values()) {
-        if (repoOf(entry.worksiteId) !== repoId) continue;
-        if (!entriesOverlap(entry.path, entry.kind, path, wanted)) continue;
-        out.push(clone(entry));
-      }
-      return out;
-    },
-
-    async removeByWorksite(worksiteId: string, source?: FootprintSource): Promise<number> {
-      let removed = 0;
-      for (const [key, entry] of [...data.footprints.entries()]) {
-        if (entry.worksiteId !== worksiteId) continue;
-        if (source !== undefined && entry.source !== source) continue;
-        data.footprints.delete(key);
-        removed += 1;
-      }
-      return removed;
-    },
-
-    async coverage(worksiteId: string): Promise<FootprintCoverage> {
-      const out: FootprintCoverage = {};
-      for (const entry of data.footprints.values()) {
-        if (entry.worksiteId !== worksiteId) continue;
-        out[entry.source] = (out[entry.source] ?? 0) + 1;
-      }
-      return out;
-    },
+    add: (entries) => addFootprints(data, entries),
+    listByWorksite: (worksiteId) => listFootprintsByWorksite(data, worksiteId),
+    findOverlapping: (repoId, path, kind) => findOverlappingFootprints(data, repoId, path, kind),
+    removeByWorksite: (worksiteId, source) =>
+      removeFootprintsByWorksite(data, worksiteId, source),
+    coverage: (worksiteId) => footprintCoverage(data, worksiteId),
   };
 }

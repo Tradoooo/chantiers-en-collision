@@ -28,54 +28,68 @@ function viewOf(notice: Notice): NoticeView {
   };
 }
 
+async function postNotice(
+  data: MemoryData,
+  ids: IdGen,
+  notice: Omit<Notice, "id"> & { id?: string },
+  recipientWorksiteIds: string[],
+): Promise<Notice> {
+  const stored: Notice = { ...clone(notice), id: notice.id || ids("ntc") };
+  data.notices.set(stored.id, stored);
+  for (const worksiteId of recipientWorksiteIds) {
+    const key = deliveryKey(stored.id, worksiteId);
+    if (data.deliveries.has(key)) continue;
+    const row: NoticeDelivery = { noticeId: stored.id, worksiteId, deliveredAt: undefined };
+    data.deliveries.set(key, row);
+  }
+  return clone(stored);
+}
+
+async function listNoticesByWorksite(data: MemoryData, worksiteId: string): Promise<Notice[]> {
+  const out: Notice[] = [];
+  for (const notice of data.notices.values()) {
+    if (notice.worksiteId === worksiteId) out.push(clone(notice));
+  }
+  return out.sort(
+    (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+  );
+}
+
+async function pendingNoticesFor(data: MemoryData, worksiteIds: string[]): Promise<NoticeView[]> {
+  const wanted = new Set(worksiteIds);
+  const seen = new Set<string>();
+  const out: NoticeView[] = [];
+  for (const row of data.deliveries.values()) {
+    if (row.deliveredAt || !wanted.has(row.worksiteId) || seen.has(row.noticeId)) continue;
+    const notice = data.notices.get(row.noticeId);
+    if (!notice) continue;
+    seen.add(row.noticeId);
+    out.push(viewOf(notice));
+  }
+  return out.sort(
+    (a, b) => a.createdAt.localeCompare(b.createdAt) || a.noticeId.localeCompare(b.noticeId),
+  );
+}
+
+async function markNoticeDelivered(
+  data: MemoryData,
+  noticeId: string,
+  worksiteId: string,
+  at: string,
+): Promise<void> {
+  const key = deliveryKey(noticeId, worksiteId);
+  const row = data.deliveries.get(key);
+  if (!row || row.deliveredAt) return; // idempotent: first delivery wins
+  data.deliveries.set(key, { ...row, deliveredAt: at });
+}
+
 export function createNoticeStore(data: MemoryData, ids: IdGen): NoticeStore {
   return {
-    async post(
-      notice: Omit<Notice, "id"> & { id?: string },
-      recipientWorksiteIds: string[],
-    ): Promise<Notice> {
-      const stored: Notice = { ...clone(notice), id: notice.id || ids("ntc") };
-      data.notices.set(stored.id, stored);
-      for (const worksiteId of recipientWorksiteIds) {
-        const key = deliveryKey(stored.id, worksiteId);
-        if (data.deliveries.has(key)) continue;
-        const row: NoticeDelivery = { noticeId: stored.id, worksiteId, deliveredAt: undefined };
-        data.deliveries.set(key, row);
-      }
-      return clone(stored);
-    },
-
-    async listByWorksite(worksiteId: string): Promise<Notice[]> {
-      const out: Notice[] = [];
-      for (const notice of data.notices.values()) {
-        if (notice.worksiteId === worksiteId) out.push(clone(notice));
-      }
-      return out.sort(
-        (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
-      );
-    },
-
-    async pendingFor(worksiteIds: string[]): Promise<NoticeView[]> {
-      const wanted = new Set(worksiteIds);
-      const seen = new Set<string>();
-      const out: NoticeView[] = [];
-      for (const row of data.deliveries.values()) {
-        if (row.deliveredAt || !wanted.has(row.worksiteId) || seen.has(row.noticeId)) continue;
-        const notice = data.notices.get(row.noticeId);
-        if (!notice) continue;
-        seen.add(row.noticeId);
-        out.push(viewOf(notice));
-      }
-      return out.sort(
-        (a, b) => a.createdAt.localeCompare(b.createdAt) || a.noticeId.localeCompare(b.noticeId),
-      );
-    },
-
-    async markDelivered(noticeId: string, worksiteId: string, at: string): Promise<void> {
-      const key = deliveryKey(noticeId, worksiteId);
-      const row = data.deliveries.get(key);
-      if (!row || row.deliveredAt) return; // idempotent: first delivery wins
-      data.deliveries.set(key, { ...row, deliveredAt: at });
-    },
+    post: (notice, recipientWorksiteIds) =>
+      postNotice(data, ids, notice, recipientWorksiteIds),
+    listByWorksite: (worksiteId) => listNoticesByWorksite(data, worksiteId),
+    pendingFor: (worksiteIds) => pendingNoticesFor(data, worksiteIds),
+    markDelivered: (noticeId, worksiteId, at) =>
+      markNoticeDelivered(data, noticeId, worksiteId, at),
   };
 }

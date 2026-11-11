@@ -123,83 +123,96 @@ async function findWorksite(id: string): Promise<Worksite | undefined> {
   return row ? toWorksite(row) : undefined;
 }
 
+async function createWorksite(w: Omit<Worksite, "id"> & { id?: string }): Promise<Worksite> {
+  const id = w.id ?? newId("ws");
+  const { columns, values } = columnsOf(w);
+  await upsert("worksite", id, columns, values);
+  return (await findWorksite(id)) ?? { ...w, id };
+}
+
+async function updateWorksite(
+  id: string,
+  patch: Partial<Worksite>,
+): Promise<Worksite | undefined> {
+  const { columns, values } = columnsOf(patch);
+  if (columns.length > 0) {
+    const assignments = columns.map((column) => `${column} = ?`).join(", ");
+    await runText(`UPDATE worksite SET ${assignments} WHERE id = ?`, [...values, id]);
+  }
+  return findWorksite(id);
+}
+
+async function findWorksiteBySession(sessionId: string): Promise<Worksite | undefined> {
+  const row = await one<WorksiteRow>`
+    SELECT * FROM worksite
+    WHERE session_id = ${sessionId} AND state <> 'closed'
+    ORDER BY last_activity_at DESC, opened_at DESC`;
+  return row ? toWorksite(row) : undefined;
+}
+
+async function findWorksitesByIssue(
+  issueKey: string,
+  repoId?: string,
+  sessionId?: string,
+): Promise<Worksite[]> {
+  let text = `SELECT * FROM worksite WHERE issue_key = ? AND state <> 'closed'`;
+  const params: SqlScalar[] = [issueKey];
+  if (repoId) {
+    text += ` AND repo_id = ?`;
+    params.push(repoId);
+  }
+  if (sessionId) {
+    text += ` AND session_id = ?`;
+    params.push(sessionId);
+  }
+  text += ` ORDER BY opened_at DESC`;
+  const rows = await allText<WorksiteRow>(text, params);
+  return rows.map(toWorksite);
+}
+
+async function listOpenWorksites(repoId: string): Promise<Worksite[]> {
+  const rows = await all<WorksiteRow>`
+    SELECT * FROM worksite
+    WHERE repo_id = ${repoId} AND state <> 'closed'
+    ORDER BY opened_at DESC`;
+  return rows.map(toWorksite);
+}
+
+async function listWorksitesByAccount(accountId: string): Promise<Worksite[]> {
+  const rows = await all<WorksiteRow>`
+    SELECT * FROM worksite WHERE account_id = ${accountId} ORDER BY opened_at DESC`;
+  return rows.map(toWorksite);
+}
+
+async function listIdleWorksites(before: string): Promise<Worksite[]> {
+  // Dormant worksites are already parked: re-listing them would spam the
+  // sweep (memory implementation excludes them too — keep both aligned).
+  const rows = await all<WorksiteRow>`
+    SELECT * FROM worksite
+    WHERE state <> 'closed' AND state <> 'dormant' AND last_activity_at < ${before}
+    ORDER BY last_activity_at ASC`;
+  return rows.map(toWorksite);
+}
+
+async function listDormantWorksites(before: string): Promise<Worksite[]> {
+  const rows = await all<WorksiteRow>`
+    SELECT * FROM worksite
+    WHERE state = 'dormant' AND last_activity_at < ${before}
+    ORDER BY last_activity_at ASC`;
+  return rows.map(toWorksite);
+}
+
 export function createWorksiteStore(): WorksiteStore {
   return {
-    async create(w: Omit<Worksite, "id"> & { id?: string }): Promise<Worksite> {
-      const id = w.id ?? newId("ws");
-      const { columns, values } = columnsOf(w);
-      await upsert("worksite", id, columns, values);
-      return (await findWorksite(id)) ?? { ...w, id };
-    },
-
-    async update(id: string, patch: Partial<Worksite>): Promise<Worksite | undefined> {
-      const { columns, values } = columnsOf(patch);
-      if (columns.length > 0) {
-        const assignments = columns.map((column) => `${column} = ?`).join(", ");
-        await runText(`UPDATE worksite SET ${assignments} WHERE id = ?`, [...values, id]);
-      }
-      return findWorksite(id);
-    },
-
+    create: createWorksite,
+    update: updateWorksite,
     findById: findWorksite,
-
-    async findBySession(sessionId: string): Promise<Worksite | undefined> {
-      const row = await one<WorksiteRow>`
-        SELECT * FROM worksite
-        WHERE session_id = ${sessionId} AND state <> 'closed'
-        ORDER BY last_activity_at DESC, opened_at DESC`;
-      return row ? toWorksite(row) : undefined;
-    },
-
-    async findByIssue(
-      issueKey: string,
-      repoId?: string,
-      sessionId?: string,
-    ): Promise<Worksite[]> {
-      let text = `SELECT * FROM worksite WHERE issue_key = ? AND state <> 'closed'`;
-      const params: SqlScalar[] = [issueKey];
-      if (repoId) {
-        text += ` AND repo_id = ?`;
-        params.push(repoId);
-      }
-      if (sessionId) {
-        text += ` AND session_id = ?`;
-        params.push(sessionId);
-      }
-      text += ` ORDER BY opened_at DESC`;
-      const rows = await allText<WorksiteRow>(text, params);
-      return rows.map(toWorksite);
-    },
-
-    async listOpenByRepo(repoId: string): Promise<Worksite[]> {
-      const rows = await all<WorksiteRow>`
-        SELECT * FROM worksite
-        WHERE repo_id = ${repoId} AND state <> 'closed'
-        ORDER BY opened_at DESC`;
-      return rows.map(toWorksite);
-    },
-
-    async listByAccount(accountId: string): Promise<Worksite[]> {
-      const rows = await all<WorksiteRow>`
-        SELECT * FROM worksite WHERE account_id = ${accountId} ORDER BY opened_at DESC`;
-      return rows.map(toWorksite);
-    },
-
-    async listIdleBefore(before: string): Promise<Worksite[]> {
-      const rows = await all<WorksiteRow>`
-        SELECT * FROM worksite
-        WHERE state <> 'closed' AND last_activity_at < ${before}
-        ORDER BY last_activity_at ASC`;
-      return rows.map(toWorksite);
-    },
-
-    async listDormantBefore(before: string): Promise<Worksite[]> {
-      const rows = await all<WorksiteRow>`
-        SELECT * FROM worksite
-        WHERE state = 'dormant' AND last_activity_at < ${before}
-        ORDER BY last_activity_at ASC`;
-      return rows.map(toWorksite);
-    },
+    findBySession: findWorksiteBySession,
+    findByIssue: findWorksitesByIssue,
+    listOpenByRepo: listOpenWorksites,
+    listByAccount: listWorksitesByAccount,
+    listIdleBefore: listIdleWorksites,
+    listDormantBefore: listDormantWorksites,
   };
 }
 

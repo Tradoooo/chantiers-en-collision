@@ -151,66 +151,75 @@ function overlaps(row: FootprintRow, path: string, kind: PathKind): boolean {
   return entriesOverlap(path, kind, str(row.path), str(row.kind) as PathKind);
 }
 
+async function addFootprints(entries: FootprintEntryInput[]): Promise<FootprintEntry[]> {
+  const worksiteIds = Array.from(new Set(entries.map((entry) => entry.worksiteId)));
+  const repoIds = await repoIdsOfWorksites(worksiteIds);
+  const saved: FootprintEntry[] = [];
+  for (const input of entries) {
+    const at = input.at ?? new Date().toISOString();
+    const existing = await one<FootprintRow>`
+      SELECT * FROM footprint
+      WHERE worksite_id = ${input.worksiteId} AND path = ${input.path}`;
+    if (existing) {
+      const merged = mergeEntry(toEntry(existing), input, at);
+      await refreshRow(str(existing.id), merged);
+      saved.push(merged);
+      continue;
+    }
+    const id = newId("fp");
+    const entry: FootprintEntry = { ...input, firstAt: at, lastAt: at };
+    if (input.declaredMismatch) entry.declaredMismatch = true;
+    await insertRow(id, repoIds[input.worksiteId] ?? "", entry);
+    saved.push(entry);
+  }
+  return saved;
+}
+
+async function listFootprintsByWorksite(worksiteId: string): Promise<FootprintEntry[]> {
+  const rows = await all<FootprintRow>`
+    SELECT * FROM footprint WHERE worksite_id = ${worksiteId} ORDER BY path`;
+  return rows.map(toEntry);
+}
+
+async function findOverlappingFootprints(
+  repoId: string,
+  path: string,
+  kind?: PathKind,
+): Promise<FootprintEntry[]> {
+  const queryKind = kind ?? classifyPath(path);
+  const rows = await candidateRows(repoId, path);
+  return rows.filter((row) => overlaps(row, path, queryKind)).map(toEntry);
+}
+
+async function removeFootprintsByWorksite(
+  worksiteId: string,
+  source?: FootprintSource,
+): Promise<number> {
+  if (source) {
+    return run`
+      DELETE FROM footprint WHERE worksite_id = ${worksiteId} AND source = ${source}`;
+  }
+  return run`DELETE FROM footprint WHERE worksite_id = ${worksiteId}`;
+}
+
+async function footprintCoverage(worksiteId: string): Promise<FootprintCoverage> {
+  const rows = await all<{ source: string; total: number }>`
+    SELECT source, COUNT(*) AS total FROM footprint
+    WHERE worksite_id = ${worksiteId} GROUP BY source`;
+  const coverage: FootprintCoverage = {};
+  rows.forEach((row) => {
+    coverage[str(row.source) as FootprintSource] = Number(row.total);
+  });
+  return coverage;
+}
+
 export function createFootprintStore(): FootprintStore {
   return {
-    async add(entries: FootprintEntryInput[]): Promise<FootprintEntry[]> {
-      const worksiteIds = Array.from(new Set(entries.map((entry) => entry.worksiteId)));
-      const repoIds = await repoIdsOfWorksites(worksiteIds);
-      const saved: FootprintEntry[] = [];
-      for (const input of entries) {
-        const at = input.at ?? new Date().toISOString();
-        const existing = await one<FootprintRow>`
-          SELECT * FROM footprint
-          WHERE worksite_id = ${input.worksiteId} AND path = ${input.path}`;
-        if (existing) {
-          const merged = mergeEntry(toEntry(existing), input, at);
-          await refreshRow(str(existing.id), merged);
-          saved.push(merged);
-          continue;
-        }
-        const id = newId("fp");
-        const entry: FootprintEntry = { ...input, firstAt: at, lastAt: at };
-        if (input.declaredMismatch) entry.declaredMismatch = true;
-        await insertRow(id, repoIds[input.worksiteId] ?? "", entry);
-        saved.push(entry);
-      }
-      return saved;
-    },
-
-    async listByWorksite(worksiteId: string): Promise<FootprintEntry[]> {
-      const rows = await all<FootprintRow>`
-        SELECT * FROM footprint WHERE worksite_id = ${worksiteId} ORDER BY path`;
-      return rows.map(toEntry);
-    },
-
-    async findOverlapping(
-      repoId: string,
-      path: string,
-      kind?: PathKind,
-    ): Promise<FootprintEntry[]> {
-      const queryKind = kind ?? classifyPath(path);
-      const rows = await candidateRows(repoId, path);
-      return rows.filter((row) => overlaps(row, path, queryKind)).map(toEntry);
-    },
-
-    async removeByWorksite(worksiteId: string, source?: FootprintSource): Promise<number> {
-      if (source) {
-        return run`
-          DELETE FROM footprint WHERE worksite_id = ${worksiteId} AND source = ${source}`;
-      }
-      return run`DELETE FROM footprint WHERE worksite_id = ${worksiteId}`;
-    },
-
-    async coverage(worksiteId: string): Promise<FootprintCoverage> {
-      const rows = await all<{ source: string; total: number }>`
-        SELECT source, COUNT(*) AS total FROM footprint
-        WHERE worksite_id = ${worksiteId} GROUP BY source`;
-      const coverage: FootprintCoverage = {};
-      rows.forEach((row) => {
-        coverage[str(row.source) as FootprintSource] = Number(row.total);
-      });
-      return coverage;
-    },
+    add: addFootprints,
+    listByWorksite: listFootprintsByWorksite,
+    findOverlapping: findOverlappingFootprints,
+    removeByWorksite: removeFootprintsByWorksite,
+    coverage: footprintCoverage,
   };
 }
 

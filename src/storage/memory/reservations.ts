@@ -26,59 +26,85 @@ function overlapsAny(reservation: Reservation, paths: string[]): boolean {
   );
 }
 
+function activeReservations(
+  data: MemoryData,
+  keep: (r: Reservation) => boolean,
+  now: string,
+): Reservation[] {
+  const out: Reservation[] = [];
+  for (const r of data.reservations.values()) {
+    if (isActive(r, now) && keep(r)) out.push(clone(r));
+  }
+  return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+}
+
+async function createReservation(
+  data: MemoryData,
+  ids: IdGen,
+  r: Omit<Reservation, "id"> & { id?: string },
+): Promise<Reservation> {
+  const stored: Reservation = { ...clone(r), id: r.id || ids("res") };
+  data.reservations.set(stored.id, stored);
+  return clone(stored);
+}
+
+async function findReservationById(data: MemoryData, id: string): Promise<Reservation | undefined> {
+  const r = data.reservations.get(id);
+  return r ? clone(r) : undefined;
+}
+
+async function listActiveReservations(
+  data: MemoryData,
+  repoId: string,
+  now: string,
+): Promise<Reservation[]> {
+  return activeReservations(data, (r) => r.repoId === repoId, now);
+}
+
+async function findActiveOverlappingReservations(
+  data: MemoryData,
+  repoId: string,
+  paths: string[],
+  now: string,
+): Promise<Reservation[]> {
+  return activeReservations(data, (r) => r.repoId === repoId && overlapsAny(r, paths), now);
+}
+
+async function listReservationsByWorksite(
+  data: MemoryData,
+  worksiteId: string,
+  now: string,
+): Promise<Reservation[]> {
+  return activeReservations(data, (r) => r.worksiteId === worksiteId, now);
+}
+
+async function releaseReservation(data: MemoryData, id: string, now: string): Promise<boolean> {
+  const known = data.reservations.get(id);
+  if (!known) return false;
+  data.reservations.set(id, { ...known, releasedAt: known.releasedAt ?? now });
+  return true;
+}
+
+async function releaseExpiredReservations(data: MemoryData, now: string): Promise<Reservation[]> {
+  const released: Reservation[] = [];
+  for (const [id, r] of [...data.reservations.entries()]) {
+    if (r.releasedAt || r.expiresAt > now) continue;
+    const stored: Reservation = { ...r, releasedAt: now };
+    data.reservations.set(id, stored);
+    released.push(clone(stored));
+  }
+  return released;
+}
+
 export function createReservationStore(data: MemoryData, ids: IdGen): ReservationStore {
-  const active = (keep: (r: Reservation) => boolean, now: string): Reservation[] => {
-    const out: Reservation[] = [];
-    for (const r of data.reservations.values()) {
-      if (isActive(r, now) && keep(r)) out.push(clone(r));
-    }
-    return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
-  };
-
   return {
-    async create(r: Omit<Reservation, "id"> & { id?: string }): Promise<Reservation> {
-      const stored: Reservation = { ...clone(r), id: r.id || ids("res") };
-      data.reservations.set(stored.id, stored);
-      return clone(stored);
-    },
-
-    async findById(id: string): Promise<Reservation | undefined> {
-      const r = data.reservations.get(id);
-      return r ? clone(r) : undefined;
-    },
-
-    async listActive(repoId: string, now: string): Promise<Reservation[]> {
-      return active((r) => r.repoId === repoId, now);
-    },
-
-    async findActiveOverlapping(
-      repoId: string,
-      paths: string[],
-      now: string,
-    ): Promise<Reservation[]> {
-      return active((r) => r.repoId === repoId && overlapsAny(r, paths), now);
-    },
-
-    async listByWorksite(worksiteId: string, now: string): Promise<Reservation[]> {
-      return active((r) => r.worksiteId === worksiteId, now);
-    },
-
-    async release(id: string, now: string): Promise<boolean> {
-      const known = data.reservations.get(id);
-      if (!known) return false;
-      data.reservations.set(id, { ...known, releasedAt: known.releasedAt ?? now });
-      return true;
-    },
-
-    async releaseExpired(now: string): Promise<Reservation[]> {
-      const released: Reservation[] = [];
-      for (const [id, r] of [...data.reservations.entries()]) {
-        if (r.releasedAt || r.expiresAt > now) continue;
-        const stored: Reservation = { ...r, releasedAt: now };
-        data.reservations.set(id, stored);
-        released.push(clone(stored));
-      }
-      return released;
-    },
+    create: (r) => createReservation(data, ids, r),
+    findById: (id) => findReservationById(data, id),
+    listActive: (repoId, now) => listActiveReservations(data, repoId, now),
+    findActiveOverlapping: (repoId, paths, now) =>
+      findActiveOverlappingReservations(data, repoId, paths, now),
+    listByWorksite: (worksiteId, now) => listReservationsByWorksite(data, worksiteId, now),
+    release: (id, now) => releaseReservation(data, id, now),
+    releaseExpired: (now) => releaseExpiredReservations(data, now),
   };
 }
