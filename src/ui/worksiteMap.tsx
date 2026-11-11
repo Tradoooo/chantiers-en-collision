@@ -17,6 +17,7 @@ import ForgeUI, {
   Text,
 } from "@forge/ui";
 import type {
+  ParallelWidthReport,
   MapNode,
   Worksite,
   WorksiteMapData,
@@ -112,6 +113,49 @@ function occupantsCell(
   );
 }
 
+/** Parallel width of the repo (spec §27): how many agents fit at once. */
+function WidthSection(props: { width: ParallelWidthReport }) {
+  const w = props.width;
+  return (
+    <Fragment>
+      <Heading size="medium">Parallel width</Heading>
+      <SectionMessage
+        appearance={w.width >= 3 ? "confirmation" : w.width === 2 ? "info" : "warning"}
+        title={`${w.width} agent(s) at once — confidence ${w.confidence}`}
+      >
+        <Text>
+          {w.suggestion
+            ? `${w.suggestion.split} → ${w.suggestion.widthAfter} at once (+${w.suggestion.delta}).`
+            : "Largest collision-free wave over the current ground."}
+        </Text>
+      </SectionMessage>
+      {w.bottlenecks.length > 0 && (
+        <Table>
+          <Head>
+            <Cell>
+              <Text>bottleneck</Text>
+            </Cell>
+            <Cell>
+              <Text>collision links</Text>
+            </Cell>
+          </Head>
+          {w.bottlenecks.map((b) => (
+            <Row>
+              <Cell>
+                <Text>{b.label}</Text>
+              </Cell>
+              <Cell>
+                <Text>{String(b.edges)}</Text>
+              </Cell>
+            </Row>
+          ))}
+        </Table>
+      )}
+      {w.note !== undefined && <Text>{w.note}</Text>}
+    </Fragment>
+  );
+}
+
 export function WorksiteMap(props: { data: WorksiteMapData; now: string }) {
   const byId = new Map<string, OccupiedWorksite>();
   for (const worksite of props.data.worksites) byId.set(worksite.id, worksite);
@@ -151,6 +195,7 @@ export function WorksiteMap(props: { data: WorksiteMapData; now: string }) {
           </Row>
         ))}
       </Table>
+      {props.data.width !== undefined && <WidthSection width={props.data.width} />}
     </Fragment>
   );
 }

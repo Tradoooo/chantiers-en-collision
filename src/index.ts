@@ -64,6 +64,7 @@ const TOOL_FUNCTION_KEYS: Record<string, string> = {
   "list-clear-work": "listClearWork",
   "next-clear-ticket": "nextClearTicketTool",
   "plan-parallel-work": "planParallelWork",
+  "measure-parallel-width": "measureParallelWidthTool",
   "reserve-zone": "reserveZone",
   "post-notice": "postNotice",
   "resolve-collision": "resolveCollision",
@@ -125,6 +126,7 @@ export const listCollisions = toolHandler("list-collisions");
 export const listClearWork = toolHandler("list-clear-work");
 export const nextClearTicketTool = toolHandler("next-clear-ticket");
 export const planParallelWork = toolHandler("plan-parallel-work");
+export const measureParallelWidthTool = toolHandler("measure-parallel-width");
 export const reserveZone = toolHandler("reserve-zone");
 export const postNotice = toolHandler("post-notice");
 export const resolveCollision = toolHandler("resolve-collision");

@@ -13,24 +13,17 @@
  * the same handler answers however the platform routes the call.
  */
 
-import type {
-  Collision,
-  FootprintMode,
-  Locale,
-  ResolutionChoice,
-  Verdict,
-} from "../core/types";
+import type { Collision, Locale, Verdict } from "../core/types";
 import type { Ctx } from "../services/ctx";
 import { checkZone, declareFootprint } from "../services/declare";
 import { reportConflict } from "../services/ingest";
 import { listClearWork, listCollisions, nextClearTicket, planParallelWork } from "../services/planning";
+import { measureParallelWidth } from "../services/width";
 import { postNotice } from "../services/notices";
 import { reserveZone } from "../services/reservations";
 import { resolveCollision } from "../services/resolve";
 import { buildNeighborInfo } from "../services/shared";
-import { projectOfRepoSlug } from "./discovery";
 import { closeWorksite, getWorksitePanel, whoTouches } from "../services/worksites";
-import { buildCtx, type BuildCtxOptions, type ForgeInvocationContext } from "../forge-context";
 import { predictionFor } from "./prediction";
 import {
   closeText,
@@ -47,120 +40,38 @@ import {
   type CollisionRow,
 } from "./tool-text";
 
-/** Payload of an action / resolver call: simple values only. */
-export type ToolPayload = Record<string, unknown>;
+/* Shared parsing / identity / Ctx helpers live in ./tool-helpers (split for
+ * the <500-lines rule); re-exported so existing imports keep working. */
+import {
+  CHOICES,
+  int,
+  localeOf,
+  MAX_COLLISION_ROWS,
+  MODES,
+  oneOf,
+  OUTCOMES,
+  paths,
+  payloadOf,
+  required,
+  str,
+  ToolInputError,
+  toolCtx,
+} from "./tool-helpers";
+import type { ToolHandler, ToolRequest, ToolResult } from "./tool-helpers";
 
-export interface ToolRequest {
-  payload?: ToolPayload;
-  context?: ForgeInvocationContext;
-}
-
-/** Everything a tool returns must be JSON-serializable (the resolver checks). */
-export interface ToolResult {
-  tool: string;
-  text: string;
-  [key: string]: unknown;
-}
-
-export type ToolHandler = (request: ToolRequest) => Promise<ToolResult>;
-
-/**
- * Test seam: the Ctx factory the tools go through. Production uses
- * `buildCtx` (Forge SQL stores, real clock, Jira port); tests replace it with
- * the same `buildCtx` on memory stores + a controllable clock, so the parsing,
- * the identity rules and the service wiring are exercised for real.
- */
-export interface McpDeps {
-  buildCtx(options: BuildCtxOptions): Promise<Ctx>;
-}
-
-export const MCP_DEPS: McpDeps = { buildCtx };
-
-/** A required input is missing or of the wrong shape. */
-export class ToolInputError extends Error {}
-
-const MODES: FootprintMode[] = ["edit", "create", "delete", "rename"];
-const OUTCOMES = ["merged", "abandoned", "done"] as const;
-const CHOICES: ResolutionChoice[] = [
-  "wait",
-  "sequence",
-  "coordinate",
-  "split",
-  "merge",
-  "override",
-];
-/** Cap on the enriched collision list (an action may not return 5 MB). */
-const MAX_COLLISION_ROWS = 40;
-
-/* ------------------------------------------------------------------ */
-/* Payload parsing (no duplication between the 13 tools)                */
-/* ------------------------------------------------------------------ */
-
-function payloadOf(request: ToolRequest): ToolPayload {
-  return request.payload ?? {};
-}
-
-export function str(payload: ToolPayload, name: string): string | undefined {
-  const value = payload[name];
-  if (typeof value === "string") return value.trim() === "" ? undefined : value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return undefined;
-}
-
-export function required(payload: ToolPayload, name: string): string {
-  const value = str(payload, name);
-  if (value === undefined) throw new ToolInputError(`missing required input: ${name}`);
-  return value;
-}
-
-export function int(payload: ToolPayload, name: string): number | undefined {
-  const value = payload[name];
-  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
-  return Number.isFinite(parsed) ? Math.trunc(parsed) : undefined;
-}
-
-/** `paths` arrives as ONE string, one path per line (spec §15). */
-export function paths(payload: ToolPayload, name = "paths"): string {
-  return str(payload, name) ?? "";
-}
-
-function oneOf<T extends string>(payload: ToolPayload, name: string, allowed: T[]): T | undefined {
-  const value = str(payload, name)?.toLowerCase();
-  return value !== undefined && allowed.includes(value as T) ? (value as T) : undefined;
-}
-
-/** Submission language is English; a caller may still ask for French. */
-function localeOf(payload: ToolPayload): Locale {
-  return oneOf(payload, "locale", ["en", "fr"] as Locale[]) ?? "en";
-}
-
-async function toolCtx(
-  request: ToolRequest,
-  extra: { issueKey?: string; sessionRef?: string; agentRef?: string; repoSlug?: string } = {},
-): Promise<Ctx> {
-  const options: BuildCtxOptions = {
-    context: request.context,
-    client: "mcp",
-    issueKey: extra.issueKey,
-    sessionRef: extra.sessionRef,
-    agentRef: extra.agentRef,
-  };
-  const ctx = await MCP_DEPS.buildCtx(options);
-  // A repo-only call (check-zone, who-touches) carries no project: without a
-  // hint the repos/zones/rules bucket would be the installation default and
-  // the repository would not be found. Look for the project that owns the slug.
-  if (extra.repoSlug === undefined || extra.issueKey !== undefined) return ctx;
-  if (projectHinted(request.context)) return ctx;
-  const projectId = await projectOfRepoSlug(ctx, extra.repoSlug);
-  if (projectId === undefined || projectId === ctx.projectId) return ctx;
-  return MCP_DEPS.buildCtx({ ...options, projectId });
-}
-
-/** True when the platform told us which Jira project the call comes from. */
-function projectHinted(context?: ForgeInvocationContext): boolean {
-  const key = context?.projectKey ?? context?.jira?.projectKey;
-  return typeof key === "string" && key !== "";
-}
+export {
+  int,
+  MCP_DEPS,
+  paths,
+  required,
+  str,
+  ToolInputError,
+  type McpDeps,
+  type ToolHandler,
+  type ToolPayload,
+  type ToolRequest,
+  type ToolResult,
+} from "./tool-helpers";
 
 function verdictResult(tool: string, verdict: Verdict): ToolResult {
   const result: ToolResult = {
@@ -323,6 +234,30 @@ export async function listClearWorkTool(request: ToolRequest): Promise<ToolResul
   };
 }
 
+export async function measureParallelWidthTool(request: ToolRequest): Promise<ToolResult> {
+  const payload = payloadOf(request);
+  const jql = str(payload, "jql");
+  const repoSlug = str(payload, "repo");
+  const ctx = await toolCtx(request, { repoSlug: repoSlug || undefined });
+  const report = await measureParallelWidth(ctx, {
+    jql: jql || undefined,
+    repoSlug: repoSlug || undefined,
+  });
+  const lines = [
+    `parallel width: ${report.width} agent(s) at once over ${report.ticketCount} ticket(s) (confidence: ${report.confidence})`,
+    ...report.bottlenecks.map(
+      (b) => `bottleneck: ${b.label} — ${b.edges} collision link(s)`,
+    ),
+  ];
+  if (report.suggestion) {
+    lines.push(
+      `${report.suggestion.split} → width ${report.suggestion.widthAfter} (+${report.suggestion.delta})`,
+    );
+  }
+  if (report.note) lines.push(report.note);
+  return { tool: "measure-parallel-width", text: lines.join("\n"), report };
+}
+
 export async function planParallelWorkTool(request: ToolRequest): Promise<ToolResult> {
   const payload = payloadOf(request);
   const jql = required(payload, "jql");
@@ -459,6 +394,8 @@ export const MCP_TOOLS: Record<string, ToolHandler> = {
   nextClearTicket: nextClearTicketTool,
   "plan-parallel-work": planParallelWorkTool,
   planParallelWork: planParallelWorkTool,
+  "measure-parallel-width": measureParallelWidthTool,
+  measureParallelWidth: measureParallelWidthTool,
   "reserve-zone": reserveZoneTool,
   reserveZone: reserveZoneTool,
   "post-notice": postNoticeTool,
@@ -471,7 +408,7 @@ export const MCP_TOOLS: Record<string, ToolHandler> = {
   reportConflict: reportConflictTool,
 };
 
-/** The 14 tool keys of manifest.yml (`modules.rovo:mcp[0].tools`). */
+/** The 15 tool keys of manifest.yml (`modules.rovo:mcp[0].tools`). */
 export const MCP_TOOL_KEYS = [
   "declare-footprint",
   "check-zone",
@@ -482,6 +419,7 @@ export const MCP_TOOL_KEYS = [
   "list-clear-work",
   "next-clear-ticket",
   "plan-parallel-work",
+  "measure-parallel-width",
   "reserve-zone",
   "post-notice",
   "resolve-collision",

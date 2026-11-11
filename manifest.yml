@@ -30,6 +30,7 @@ modules:
         - list-clear-work
         - next-clear-ticket
         - plan-parallel-work
+        - measure-parallel-width
         - reserve-zone
         - post-notice
         - resolve-collision
@@ -210,6 +211,26 @@ modules:
           type: integer
           required: true
           description: "Number of parallel agents or developers"
+    - key: measure-parallel-width
+      name: Measure parallel width
+      function: measureParallelWidthTool
+      actionVerb: GET
+      description: |
+        How many agents or developers this repository supports AT ONCE:
+        the largest collision-free wave over the selected tickets (or the
+        merged history / open worksites), the bottleneck zones, and what
+        splitting the top bottleneck would buy.
+      inputs:
+        jql:
+          title: JQL
+          type: string
+          required: false
+          description: "Tickets to measure; defaults to the repo's recent history or open worksites"
+        repo:
+          title: Repository
+          type: string
+          required: false
+          description: "Repository slug; defaults to the project's first repository"
     - key: reserve-zone
       name: Reserve zone
       function: reserveZone
@@ -526,6 +547,8 @@ modules:
       handler: index.nextClearTicketTool
     - key: planParallelWork
       handler: index.planParallelWork
+    - key: measureParallelWidthTool
+      handler: index.measureParallelWidthTool
     - key: reserveZone
       handler: index.reserveZone
     - key: postNotice

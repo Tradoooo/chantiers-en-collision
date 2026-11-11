@@ -179,6 +179,8 @@ export interface WorksiteMapData {
   repoSlug: string;
   nodes: MapNode[];
   worksites: (Worksite & { actorLabel: string })[];
+  /** Parallel width of the repo (spec §27) — computed best effort. */
+  width?: ParallelWidthReport;
 }
 
 export interface SprintCheckData {
@@ -203,6 +205,29 @@ export interface CollisionStats {
   seenAtPr: number;
   missedUntilMerge: number;
   predictionAccuracy?: number;
+}
+
+/* ------------------------------------------------------------------ */
+/* Parallel width (spec §27 vision)                                    */
+/* ------------------------------------------------------------------ */
+
+export interface WidthBottleneck {
+  label: string;
+  zoneName?: string;
+  path?: string;
+  edges: number;
+}
+
+export interface ParallelWidthReport {
+  /** Max tickets that can run at the same time without D2+ collision. */
+  width: number;
+  ticketCount: number;
+  /** Top 3 zones/paths carrying the most links, descending. */
+  bottlenecks: WidthBottleneck[];
+  /** What a split of the top bottleneck would buy. */
+  suggestion?: { split: string; widthAfter: number; delta: number };
+  confidence: "high" | "medium" | "low";
+  note?: string;
 }
 
 /* ------------------------------------------------------------------ */

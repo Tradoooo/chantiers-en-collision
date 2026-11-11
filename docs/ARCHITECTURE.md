@@ -8,7 +8,7 @@ Four entry points, one data model:
 ```
   agent (Rovo MCP)      agent client (hook)        CI (push)          human (Jira UI)
         │                      │                       │                     │
-   13 MCP tools          web trigger `ingest`     web trigger `ingest`   Forge UI screens
+   15 MCP tools          web trigger `ingest`     web trigger `ingest`   Forge UI screens
         │              /open /touch /close        /ci/footprint          panels, map, sprint,
         │                                        /ci/conflict            settings, gadget
         └───────────────┬───────────────────────────┴─────────────────────────┘
@@ -29,7 +29,7 @@ Four entry points, one data model:
 
 | Module | Entries | Notes |
 |---|---|---|
-| `rovo:mcp` | one server `chantiers-mcp`, 13 tools | Preview; ≤ 50 tools; external access over OAuth 2.1 after an admin enables it. |
+| `rovo:mcp` | one server `chantiers-mcp`, 15 tools | Preview; ≤ 50 tools; external access over OAuth 2.1 after an admin enables it. |
 | `action` | 13, one per tool | Inputs are simple values only; 55 s budget. Automation-triggered agents may only call `GET` actions — hence all planning tools are `GET`. |
 | `webtrigger` | `ingest`, `urlFormat: v2`, `response: { type: dynamic }` | Dynamic response so the hook JSON can be returned. |
 | `jira:issuePanel` | `worksite-panel` | Footprint by source, neighbours, collisions and their ways out, notices. |

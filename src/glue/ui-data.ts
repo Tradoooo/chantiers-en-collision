@@ -25,6 +25,7 @@ import { parentDirs } from "../core/paths";
 import { zoneForPath } from "../core/zones";
 import type { Ctx } from "../services/ctx";
 import { learningReport, type LearningReport } from "../services/learning";
+import { measureParallelWidth } from "../services/width";
 import { createToken, type CreatedToken } from "../services/tokens";
 import { buildNeighborInfo, normalizeSlug } from "../services/shared";
 import { ciSnippets, hooksSettingsFile, type CiSnippet } from "./templates";
@@ -151,7 +152,9 @@ export async function mapData(ctx: Ctx, options: { repoSlug?: string; locale?: L
       node.zoneNature = zone.nature;
     }
   }
-  return { repoSlug: repo.slug, nodes: [...nodes.values()], worksites };
+  // Parallel width (spec §27) — best effort: the map still renders without it.
+  const width = await measureParallelWidth(ctx, { repoSlug: repo.slug }).catch(() => undefined);
+  return { repoSlug: repo.slug, nodes: [...nodes.values()], worksites, width };
 }
 
 /* ------------------------------------------------------------------ */

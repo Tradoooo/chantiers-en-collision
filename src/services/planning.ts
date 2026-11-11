@@ -77,7 +77,22 @@ export async function planTicketFor(
   };
 }
 
-/** Virtual worksites so detectCollisions can score ticket pairs. */
+/**
+ * Planning treats footprints as structural facts: the prediction-only cap
+ * (D1, "probable") belongs to LIVE verdicts, not to the planning graph —
+ * otherwise a fully predicted sprint could never show a D2+ risk.
+ */
+export function asStructural(tickets: PlanTicket[]): PlanTicket[] {
+  return tickets.map((t) => ({
+    ...t,
+    entries: t.entries.map((e) => ({ ...e, source: "declared" as const })),
+  }));
+}
+
+/** Virtual worksites so detectCollisions can score ticket pairs.
+ *  State "open" (not "planned"): the planning graph scores structural
+ *  intent — the prediction-only cap still applies through ENTRY sources
+ *  (all-predicted entries), never through the virtual worksite state. */
 export function virtualSides(tickets: PlanTicket[], repoId: string): WorksiteWithEntries[] {
   const now = "1970-01-01T00:00:00.000Z";
   return tickets.map((t, i) => ({
@@ -87,7 +102,7 @@ export function virtualSides(tickets: PlanTicket[], repoId: string): WorksiteWit
       repoId,
       accountId: `plan-${i}`,
       kind: "agent" as const,
-      state: "planned" as const,
+      state: "open" as const,
       openedAt: now,
       lastActivityAt: now,
     },
@@ -254,7 +269,7 @@ async function riskyPairsOf(
   repoId: string,
   now: string,
 ): Promise<SprintCheckData["riskyPairs"]> {
-  const sides = virtualSides(plans, repoId);
+  const sides = virtualSides(asStructural(plans), repoId);
   const out: SprintCheckData["riskyPairs"] = [];
   const seen = new Set<string>();
   for (const side of sides) {

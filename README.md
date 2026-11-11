@@ -7,6 +7,11 @@ Forge app for Jira · **Codegeist 2026**, category *Apps for Software Teams* · 
 The page runs the REAL collision engine compiled for the browser (in-memory stores):
 a two-agent verdict playground and the full “Four agents” scenario, replayable step by step.
 
+**Companion repositories**
+- [`BaptisteFaisy/billing-demo`](https://github.com/BaptisteFaisy/billing-demo) — the sample repo judges clone: hook, CI step and curl scripts ready (walkthrough inside).
+- [`BaptisteFaisy/open-footprint-protocol`](https://github.com/BaptisteFaisy/open-footprint-protocol) — the open protocol: any agent, any backend — spec, JSON schemas, reference server, skill.
+- [`docs/WATCHER.md`](docs/WATCHER.md) — `chantier-watch`: makes *any* editor or agent visible (Cursor, Aider, Copilot CLI, Codex…), even without a native hook.
+
 > Pitch, verbatim from the spec (docs/SPEC.md §1):
 > « Jira sait à chaque instant qui travaille sur quelle partie du code, personnes et agents
 > confondus : chaque travail en cours a une emprise sur le dépôt, tout chevauchement est
@@ -98,7 +103,7 @@ CLI is a global/one-shot tool, and `npm run verify` must stay runnable without i
 
 | Path | Contents |
 |---|---|
-| `manifest.yml` | Forge modules: `rovo:mcp` (13 tools), 13 `action` entries, the `ingest` web trigger, 7 Jira UI modules, 2 JQL functions, triggers, the Rovo agent and skill, 20 functions. |
+| `manifest.yml` | Forge modules: `rovo:mcp` (15 tools), 15 `action` entries, the `ingest` web trigger, 7 Jira UI modules, 2 JQL functions, triggers, the Rovo agent and skill, 20 functions. |
 | `src/core/` | Pure logic, no Forge import: paths, zones, degrees, collisions, verdict, footprints, lifecycle, notices, prediction, priority, waves. |
 | `src/services/` | Orchestration over stores + `ctx` (identity, clock, Jira port): declare, worksites, notices, reservations, resolve, planning, ingest, maintenance, tokens. |
 | `src/storage/` | `schema.ts` (Forge SQL DDL), `forge/**` (SQL implementation), `memory/**` (tests + simulation). |
@@ -112,7 +117,7 @@ CLI is a global/one-shot tool, and `npm run verify` must stay runnable without i
 
 ## Architecture (short)
 
-One Forge app installed on Jira. Agents talk to it over **Rovo MCP** (13 tools); agent clients
+One Forge app installed on Jira. Agents talk to it over **Rovo MCP** (15 tools); agent clients
 and CI talk to it over one **web trigger** (`ingest`, routes `/open`, `/touch`, `/close`,
 `/ci/footprint`, `/ci/conflict`); humans talk to it through **Jira UI** modules and a **Rovo
 agent**. Everything is persisted in **Forge SQL** (14 tables, no foreign keys), and two scheduled
@@ -123,7 +128,7 @@ Full detail — step-by-step declaration, data model, footprint sources, zones, 
 behaviour, tokens, scheduled jobs, Forge SQL limits: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 The agent protocol itself: **[docs/PROTOCOL.md](docs/PROTOCOL.md)**.
 
-## The 13 MCP tools
+## The 15 MCP tools
 
 Exposed by the `chantiers-mcp` Rovo MCP server; each one maps to one `action` entry in
 `manifest.yml`. Verbs are Forge `actionVerb` values.
@@ -137,7 +142,9 @@ Exposed by the `chantiers-mcp` Rovo MCP server; each one maps to one `action` en
 | `predict-footprint` | GET | Predicted footprint from the component and similar merged tickets; never blocking, shown with its confidence. |
 | `list-collisions` | GET | Colliding pairs for the tickets matched by a JQL query, with degree and state. |
 | `list-clear-work` | GET | Ready tickets nobody collides with — what an idle agent can start now. |
+| `next-clear-ticket` | GET | The dispatcher: THE next ticket this worker can start, ranked by priority and due date, with two alternatives. |
 | `plan-parallel-work` | GET | Split the tickets of a JQL query into collision-free waves for N workers; hinges go alone and first. |
+| `measure-parallel-width` | GET | How many agents this repo supports at once, the bottleneck zones, and what splitting the top bottleneck would buy. |
 | `reserve-zone` | CREATE | Reserve paths for a limited time (120 min default, 1440 max). Always expires. |
 | `post-notice` | CREATE | Send a short notice to neighbouring worksites; delivered once per session. |
 | `resolve-collision` | UPDATE | Record how a collision is handled: wait, sequence, coordinate, split, merge, override. |
@@ -155,7 +162,7 @@ hackathon. 28 requirements in total.
 
 | Priority | Count | Highlights |
 |---|---|---|
-| **M** | 17 (CC-01…CC-17) | worksite lifecycle, declared footprint with a verdict under 2 s, D0–D4 detection, zones and the default catalogue, hook endpoint, per-session distinction, bounded reservations, notices delivered once, issue panel, the 13 MCP tools, `plan-parallel-work`, prediction, CI attested footprint, worksite map, simulation console, Rovo agent + skill, dormancy and auto-close. |
+| **M** | 17 (CC-01…CC-17) | worksite lifecycle, declared footprint with a verdict under 2 s, D0–D4 detection, zones and the default catalogue, hook endpoint, per-session distinction, bounded reservations, notices delivered once, issue panel, the 15 MCP tools, `plan-parallel-work`, prediction, CI attested footprint, worksite map, simulation console, Rovo agent + skill, dormancy and auto-close. |
 | **S** | 8 (CC-18…CC-25) | "Collisions" custom field + JQL functions, sprint check, configurable yield order and the *sequence* way out, hard mode (hook deny), Bitbucket companion app, sub-worksites for sub-agents, LLM-based prediction from ticket text, measured real conflicts and zone reclassification. |
 | **C** | 3 (CC-26…CC-28) | D5 broken contracts from declared symbols, cross-repository collisions, non-code worksites (Confluence pages, Jira config touched by Rovo agents). |
 
