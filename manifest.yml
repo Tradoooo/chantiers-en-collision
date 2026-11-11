@@ -1,0 +1,482 @@
+# Chantiers en collision — Forge app manifest
+#
+# Schema validated where possible by `node scripts/check-manifest.mjs` (CI)
+# and by `forge lint` (local). Modules marked "TODO(forge-lint)" follow the
+# spec sketch (docs/SPEC.md §17) and must be confirmed with forge lint
+# before the first `forge deploy`.
+#
+# app.id below is a placeholder — replace it with the real id given by
+# `forge create` (never commit a real secret here).
+
+runtime:
+  name: nodejs22.x
+
+app:
+  id: ari:cloud:ecosystem::app/11111111-2222-3333-4444-555555555555
+  runtime:
+    name: nodejs22.x
+
+modules:
+  # ------------------------------------------------------------- Rovo MCP
+  # Exact schema per manifest-reference/modules/rovo-mcp (fetched 2026-11-11):
+  # tools = list of action keys; ≤ 50 tools; name ≤ 30 chars.
+  rovo:mcp:
+    - key: chantiers-mcp
+      name: Chantiers en collision
+      tools:
+        - declare-footprint
+        - check-zone
+        - who-touches
+        - get-worksite
+        - predict-footprint
+        - list-collisions
+        - list-clear-work
+        - plan-parallel-work
+        - reserve-zone
+        - post-notice
+        - resolve-collision
+        - close-worksite
+        - report-conflict
+
+  # One action per MCP tool (spec §15). Inputs are simple values only:
+  # `paths` is a string with one path per line; `mode` is edit/create/delete/rename.
+  action:
+    - key: declare-footprint
+      name: Declare footprint
+      function: declareFootprint
+      actionVerb: CREATE
+      description: |
+        Declare the repository paths this worksite is about to touch, and get
+        a verdict (free / caution / wait / stop) with every collision, the
+        neighbour's name and what to do instead.
+      inputs:
+        issueKey:
+          title: Issue key
+          type: string
+          required: true
+          description: "Jira issue key, e.g. PROJ-88"
+        repo:
+          title: Repository
+          type: string
+          required: true
+          description: "Repository slug, e.g. acme/billing"
+        paths:
+          title: Paths
+          type: string
+          required: true
+          description: "Footprint paths, one per line: files, folders or glob patterns"
+        mode:
+          title: Mode
+          type: string
+          required: false
+          description: "edit (default), create, delete or rename"
+        etaMinutes:
+          title: ETA minutes
+          type: integer
+          required: false
+          description: "Estimated minutes until the work is done"
+        session:
+          title: Session
+          type: string
+          required: false
+          description: "Agent session reference; distinguishes sessions, never grants rights"
+    - key: check-zone
+      name: Check zone
+      function: checkZone
+      actionVerb: GET
+      description: |
+        Get the verdict for paths without declaring anything.
+      inputs:
+        repo:
+          title: Repository
+          type: string
+          required: true
+          description: "Repository slug"
+        paths:
+          title: Paths
+          type: string
+          required: true
+          description: "Paths to check, one per line"
+        issueKey:
+          title: Issue key
+          type: string
+          required: false
+          description: "Optional issue key for context"
+    - key: who-touches
+      name: Who touches
+      function: whoTouches
+      actionVerb: GET
+      description: |
+        List the worksites currently present on a path, their state and last activity.
+      inputs:
+        repo:
+          title: Repository
+          type: string
+          required: true
+          description: "Repository slug"
+        path:
+          title: Path
+          type: string
+          required: true
+          description: "File or folder path"
+    - key: get-worksite
+      name: Get worksite
+      function: getWorksite
+      actionVerb: GET
+      description: |
+        Full worksite panel data for a ticket: footprint by source, neighbours,
+        collisions, notices.
+      inputs:
+        issueKey:
+          title: Issue key
+          type: string
+          required: true
+          description: "Jira issue key"
+    - key: predict-footprint
+      name: Predict footprint
+      function: predictFootprintTool
+      actionVerb: GET
+      description: |
+        Predicted footprint of a ticket from its component and similar merged
+        tickets. Never blocking; shown with its confidence.
+      inputs:
+        issueKey:
+          title: Issue key
+          type: string
+          required: true
+          description: "Jira issue key"
+    - key: list-collisions
+      name: List collisions
+      function: listCollisions
+      actionVerb: GET
+      description: |
+        Colliding pairs for the tickets matched by a JQL query, with degree and state.
+      inputs:
+        jql:
+          title: JQL
+          type: string
+          required: true
+          description: "JQL query selecting the tickets"
+    - key: list-clear-work
+      name: List clear work
+      function: listClearWork
+      actionVerb: GET
+      description: |
+        Ready tickets nobody collides with — what an idle agent can start now.
+      inputs:
+        jql:
+          title: JQL
+          type: string
+          required: true
+          description: "JQL query selecting candidate tickets"
+        session:
+          title: Session
+          type: string
+          required: false
+          description: "Agent session reference"
+    - key: plan-parallel-work
+      name: Plan parallel work
+      function: planParallelWork
+      actionVerb: GET
+      description: |
+        Split the tickets matched by a JQL query into collision-free waves for
+        N workers. Hinge tickets go alone and first.
+      inputs:
+        jql:
+          title: JQL
+          type: string
+          required: true
+          description: "JQL query selecting the sprint tickets"
+        workers:
+          title: Workers
+          type: integer
+          required: true
+          description: "Number of parallel agents or developers"
+    - key: reserve-zone
+      name: Reserve zone
+      function: reserveZone
+      actionVerb: CREATE
+      description: |
+        Reserve paths for a limited time (2 h default, 24 h max). Reservations
+        always expire; nothing is eternal.
+      inputs:
+        issueKey:
+          title: Issue key
+          type: string
+          required: true
+          description: "Jira issue key"
+        repo:
+          title: Repository
+          type: string
+          required: true
+          description: "Repository slug"
+        paths:
+          title: Paths
+          type: string
+          required: true
+          description: "Paths to reserve, one per line"
+        minutes:
+          title: Minutes
+          type: integer
+          required: false
+          description: "Reservation duration (default 120, max 1440)"
+        reason:
+          title: Reason
+          type: string
+          required: false
+          description: "Why the zone must stay exclusive"
+    - key: post-notice
+      name: Post notice
+      function: postNotice
+      actionVerb: CREATE
+      description: |
+        Post a short notice to neighbouring worksites. Delivered once per
+        session with their next tool response or hook context.
+      inputs:
+        issueKey:
+          title: Issue key
+          type: string
+          required: true
+          description: "Jira issue key of the sender"
+        paths:
+          title: Paths
+          type: string
+          required: true
+          description: "Paths the notice is about, one per line"
+        text:
+          title: Text
+          type: string
+          required: true
+          description: "Short message, e.g. 'renaming invoices.total to total_cents'"
+    - key: resolve-collision
+      name: Resolve collision
+      function: resolveCollision
+      actionVerb: UPDATE
+      description: |
+        Record how a collision is handled: wait, sequence, coordinate, split,
+        merge or override (with a reason).
+      inputs:
+        collisionId:
+          title: Collision id
+          type: string
+          required: true
+          description: "Id returned by declare-footprint or list-collisions"
+        choice:
+          title: Choice
+          type: string
+          required: true
+          description: "wait, sequence, coordinate, split, merge or override"
+        reason:
+          title: Reason
+          type: string
+          required: false
+          description: "Required for override"
+    - key: close-worksite
+      name: Close worksite
+      function: closeWorksiteTool
+      actionVerb: UPDATE
+      description: |
+        Close a worksite (merged, abandoned, done) and release waiting neighbours.
+      inputs:
+        issueKey:
+          title: Issue key
+          type: string
+          required: true
+          description: "Jira issue key"
+        session:
+          title: Session
+          type: string
+          required: false
+          description: "Agent session reference"
+        outcome:
+          title: Outcome
+          type: string
+          required: false
+          description: "merged (default), abandoned or done"
+    - key: report-conflict
+      name: Report conflict
+      function: reportConflict
+      actionVerb: CREATE
+      description: |
+        Report a real merge/rebase conflict so the app knows whether it saw it
+        coming. Fed by the CI step.
+      inputs:
+        issueKey:
+          title: Issue key
+          type: string
+          required: true
+          description: "Jira issue key"
+        repo:
+          title: Repository
+          type: string
+          required: true
+          description: "Repository slug"
+        paths:
+          title: Paths
+          type: string
+          required: true
+          description: "Conflicting paths, one per line"
+        withIssueKey:
+          title: With issue key
+          type: string
+          required: false
+          description: "The other ticket involved, if known"
+
+  # ------------------------------------------------------------- web trigger
+  # Ingest endpoint for the agent-client hook (open/touch/close) and for CI
+  # (attested footprint, real conflicts). urlFormat v2 + dynamic response so
+  # the hook JSON (additionalContext / permissionDecision) can be returned.
+  webtrigger:
+    - key: ingest
+      function: handleIngest
+      urlFormat: v2
+      response:
+        type: dynamic
+
+  # ------------------------------------------------------------- Jira modules
+  # TODO(forge-lint): confirm exact properties for each UI module below
+  # against manifest-reference/modules/index-jira (title/render/function/resource).
+  jira:issuePanel:
+    - key: worksite-panel
+      title: Worksite
+      function: main
+      render: native:worksite-panel
+      resource: main
+  jira:projectPage:
+    - key: worksite-map
+      title: Worksite map
+      function: main
+      render: native:worksite-map
+      resource: main
+  jira:sprintAction:
+    - key: sprint-check
+      title: Check collisions
+      function: main
+      render: native:sprint-check
+      resource: main
+  jira:projectSettingsPage:
+    - key: project-settings
+      title: Worksites
+      function: main
+      render: native:project-settings
+      resource: main
+  jira:personalSettingsPage:
+    - key: personal-settings
+      title: My worksites
+      function: main
+      render: native:personal-settings
+      resource: main
+  jira:dashboardGadget:
+    - key: collision-stats
+      title: Collision stats
+      function: main
+      render: native:collision-stats
+      resource: main
+  jira:customField:
+    - key: collisions-field
+      name: Collisions
+      description: Open collision count and worst degree for this ticket
+      type: string
+  jira:jqlFunction:
+    - key: colliding-work
+      name: collidingWork
+      function: jqlCollidingWork
+      example: issue in collidingWork()
+    - key: collides-with
+      name: collidesWith
+      function: jqlCollidesWith
+      example: 'issue in collidesWith("PROJ-88")'
+
+  # ------------------------------------------------------------- triggers
+  trigger:
+    - key: issue-events
+      events:
+        - avi:jira:created:issue
+        - avi:jira:updated:issue
+      function: issueEvents
+
+  scheduledTrigger:
+    - key: five-minute-sweep
+      function: sweepFiveMinute
+      interval: fiveMinute
+    - key: daily-jobs
+      function: dailyJobs
+      interval: day
+
+  # ------------------------------------------------------------- Rovo agent & skill
+  # TODO(forge-lint): confirm rovo:agent / rovo:skill schema
+  # (manifest-reference/modules/rovo-agent and rovo-skill).
+  rovo:agent:
+    - key: site-foreman
+      name: Site foreman
+      description: |
+        Answers "who is touching billing right now?", "can I run PROJ-101 and
+        PROJ-102 in parallel?", plans sprints for N agents.
+      prompt: prompts/site-foreman.md
+      conversationStarters:
+        - Who is touching billing right now?
+        - Can I run PROJ-101 and PROJ-102 in parallel?
+        - Plan sprint 42 for four agents
+        - Which collisions did we miss last month?
+      actions:
+        - check-zone
+        - who-touches
+        - get-worksite
+        - list-collisions
+        - list-clear-work
+        - plan-parallel-work
+
+  rovo:skill:
+    - key: avoid-collisions
+      name: avoid-collisions
+      description: The agent protocol — declare before writing, read the verdict, redeclare on drift.
+      prompt: prompts/avoid-collisions.md
+
+  # ------------------------------------------------------------- functions
+  function:
+    - key: main
+      handler: index.main
+    - key: declareFootprint
+      handler: index.declareFootprint
+    - key: checkZone
+      handler: index.checkZone
+    - key: whoTouches
+      handler: index.whoTouches
+    - key: getWorksite
+      handler: index.getWorksite
+    - key: predictFootprintTool
+      handler: index.predictFootprintTool
+    - key: listCollisions
+      handler: index.listCollisions
+    - key: listClearWork
+      handler: index.listClearWork
+    - key: planParallelWork
+      handler: index.planParallelWork
+    - key: reserveZone
+      handler: index.reserveZone
+    - key: postNotice
+      handler: index.postNotice
+    - key: resolveCollision
+      handler: index.resolveCollision
+    - key: closeWorksiteTool
+      handler: index.closeWorksiteTool
+    - key: reportConflict
+      handler: index.reportConflict
+    - key: handleIngest
+      handler: index.handleIngest
+    - key: issueEvents
+      handler: index.issueEvents
+    - key: sweepFiveMinute
+      handler: index.sweepFiveMinute
+    - key: dailyJobs
+      handler: index.dailyJobs
+    - key: jqlCollidingWork
+      handler: index.jqlCollidingWork
+    - key: jqlCollidesWith
+      handler: index.jqlCollidesWith
+
+permissions:
+  scopes:
+    - read:jira-work
+    - write:jira-work
+    - read:me

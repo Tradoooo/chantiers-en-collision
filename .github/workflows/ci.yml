@@ -1,0 +1,61 @@
+name: ci
+
+# Budget rule (user 2026-10-24): every CI verdict in ≤ 5 minutes.
+# timeout-minutes: 5 on every job, concurrency with cancel-in-progress,
+# shallow checkout, npm cache. Self-hosted workers on r630
+# (label chantiers-en-collision-worker) registered by fabrique-repo.sh.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Self-hosted runner services don't load the login shell PATH.
+  PATH: /home/baptiste/tools/node-v22.12.0-linux-x64/bin:/home/baptiste/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+jobs:
+  quality:
+    name: quality
+    runs-on: [self-hosted, chantiers-en-collision-worker]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: ./.github/actions/npm-cache
+      - run: npm run lint
+      - run: npm run typecheck
+
+  test:
+    name: test
+    runs-on: [self-hosted, chantiers-en-collision-worker]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: ./.github/actions/npm-cache
+      - run: npm run test
+
+  manifest:
+    name: manifest
+    runs-on: [self-hosted, chantiers-en-collision-worker]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: ./.github/actions/npm-cache
+      - run: npm run check:manifest
