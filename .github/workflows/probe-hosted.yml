@@ -1,0 +1,15 @@
+name: probe-hosted
+# Sonde jetable : vérifie si le dispatch GitHub-hosted fonctionne pendant
+# l'incident du dispatch self-hosted du 2026-11-11 ~20:20 UTC.
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "hosted dispatch OK $(date -u +%H:%M:%S)"
