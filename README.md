@@ -2,6 +2,11 @@
 
 Forge app for Jira · **Codegeist 2026**, category *Apps for Software Teams* · MIT licence.
 
+**▶ Live demo — no install, no Jira, works on mobile:**
+**<https://baptistefaisy.github.io/chantiers-en-collision/>**
+The page runs the REAL collision engine compiled for the browser (in-memory stores):
+a two-agent verdict playground and the full “Four agents” scenario, replayable step by step.
+
 > Pitch, verbatim from the spec (docs/SPEC.md §1):
 > « Jira sait à chaque instant qui travaille sur quelle partie du code, personnes et agents
 > confondus : chaque travail en cours a une emprise sur le dépôt, tout chevauchement est

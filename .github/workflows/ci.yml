@@ -63,3 +63,19 @@ jobs:
           clean: false
       - uses: ./.github/actions/npm-cache
       - run: npm run check:manifest
+
+  site:
+    name: site
+    runs-on: [self-hosted, chantiers-en-collision-worker]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          clean: false
+      - uses: ./.github/actions/npm-cache
+      # Builds the GitHub Pages demo bundle and replays the engine headlessly
+      # (four-agents scenario + playground verdicts) — what the judges click
+      # is what CI runs.
+      - run: npm run check:site

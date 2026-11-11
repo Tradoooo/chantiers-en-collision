@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chantiers en collision — worksite collision detection for Jira</title>
+  <meta name="description" content="Jira knows who is working on which code, humans and agents alike. Every worksite has a footprint on the repo; overlaps are flagged before the first line is written. Live demo in your browser." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <p class="kicker">Forge app for Jira · Codegeist 2026 · Apps for Software Teams</p>
+      <h1>Chantiers en collision</h1>
+      <p class="tagline">
+        Jira knows who is working on which <strong>code</strong>, people and agents alike.
+        Every work in progress has a <strong>footprint</strong> on the repository; every overlap is
+        flagged <strong>before the first line is written</strong> — and the app says what to do:
+        wait, coordinate, split, or run in parallel safely.
+      </p>
+      <p class="cta">
+        <a class="btn" href="https://github.com/BaptisteFaisy/chantiers-en-collision">GitHub repository</a>
+        <a class="btn ghost" href="#playground">Try the live demo ↓</a>
+      </p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="pitch">
+      <div class="card">
+        <h2>The problem</h2>
+        <p>One person starts four coding agents in parallel. Worktrees isolate files, not intentions.
+        In twenty minutes, four worksites have diverged: two migrations carry the same number, a
+        renamed service breaks three callers, the lockfile was regenerated twice. The conflict is
+        discovered at merge time and resolved by an agent that never knew the other's intent.</p>
+      </div>
+      <div class="card">
+        <h2>The verdict</h2>
+        <p>Every declaration answers in under two seconds: <span class="chip chip-free">FREE</span>
+        <span class="chip chip-caution">CAUTION</span> <span class="chip chip-wait">WAIT</span>
+        <span class="chip chip-stop">STOP</span> — always with the neighbour's name, the cited path
+        and the course of action. No anonymous warnings.</p>
+      </div>
+      <div class="card">
+        <h2>Nothing eternal</h2>
+        <p>Reservations expire (2 h default, 24 h max). Idle worksites go dormant, then close
+        themselves. The hook fails open: if the app doesn't answer in three seconds, the agent
+        keeps working. Hard mode only denies where the project decided.</p>
+      </div>
+    </section>
+
+    <section id="playground" class="demo">
+      <h2>Live demo — the collision playground</h2>
+      <p class="sub">
+        This page runs the <em>real engine</em> (in-memory stores, no server): agent
+        <strong>PROJ-88 (Léa)</strong> declares first, then <strong>PROJ-101 (Karim)</strong>
+        declares and receives its verdict. One path per line.
+      </p>
+      <div id="presets" class="presets"></div>
+      <div class="playground-grid">
+        <label class="field">
+          <span>Agent A — PROJ-88 declares</span>
+          <textarea id="paths-a" rows="4" spellcheck="false">src/billing/</textarea>
+        </label>
+        <label class="field">
+          <span>Agent B — PROJ-101 declares</span>
+          <textarea id="paths-b" rows="4" spellcheck="false">src/billing/invoice.ts</textarea>
+        </label>
+      </div>
+      <button id="btn-declare" class="btn">Declare &amp; get the verdict</button>
+      <div id="playground-out" class="verdicts" aria-live="polite"></div>
+    </section>
+
+    <section id="scenario" class="demo">
+      <h2>Live demo — “Four agents, one repo”</h2>
+      <p class="sub">
+        The acceptance scenario of the spec, replayed in your browser: eleven steps, four agent
+        sessions of the same pilot, one migration lock, one rename notice, deliveries and releases.
+      </p>
+      <button id="btn-scenario" class="btn ghost">Replay the scenario</button>
+      <div id="scenario-out" class="steps" aria-live="polite"></div>
+    </section>
+
+    <section class="degrees">
+      <h2>Collision degrees</h2>
+      <table>
+        <thead><tr><th>Degree</th><th>Situation</th><th>Verdict</th></tr></thead>
+        <tbody>
+          <tr><td>D0</td><td>Same named zone, different files</td><td>free — neighbour mentioned</td></tr>
+          <tr><td>D1</td><td>Same folder</td><td>caution</td></tr>
+          <tr><td>D2</td><td>Same file</td><td>caution — read the neighbour first</td></tr>
+          <tr><td>D3</td><td>Same file, deleted / moved / renamed by one side</td><td>wait or coordinate</td></tr>
+          <tr><td>D4</td><td>Exclusive resource, reserved or frozen zone</td><td>wait — stop in hard mode</td></tr>
+          <tr><td>D5</td><td>Broken contract (lot C)</td><td>coordinate</td></tr>
+        </tbody>
+      </table>
+      <p class="sub">Hotspots lower the degree one step; so does a dormant neighbour; a
+      prediction-only footprint is capped at D1 and labelled “probable”.</p>
+    </section>
+
+    <section class="docs">
+      <h2>Read further</h2>
+      <ul>
+        <li><a href="https://github.com/BaptisteFaisy/chantiers-en-collision">Source code &amp; README</a></li>
+        <li><a href="https://github.com/BaptisteFaisy/chantiers-en-collision/blob/main/docs/SPEC.md">Product spec (docs/SPEC.md)</a></li>
+        <li><a href="https://github.com/BaptisteFaisy/chantiers-en-collision/blob/main/docs/JUDGES.md">How to test the app (docs/JUDGES.md)</a></li>
+        <li><a href="https://github.com/BaptisteFaisy/chantiers-en-collision/blob/main/skills/avoid-collisions/SKILL.md">The agent protocol (SKILL.md)</a></li>
+        <li><a href="https://github.com/BaptisteFaisy/chantiers-en-collision/blob/main/docs/ARCHITECTURE.md">Architecture (docs/ARCHITECTURE.md)</a></li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <p>MIT © 2026 Baptiste Faisy — built for <a href="https://codegeist2026.devpost.com/">Codegeist 2026</a>.
+    The demo on this page runs the real TypeScript engine, bundled for the browser.</p>
+  </footer>
+
+  <script src="demo.js"></script>
+</body>
+</html>

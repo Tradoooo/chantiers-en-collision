@@ -1,7 +1,7 @@
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/**", "node_modules/**", "coverage/**", ".forge/**"] },
+  { ignores: ["dist/**", "site/dist/**", "node_modules/**", "coverage/**", ".forge/**"] },
   ...tseslint.configs.recommended,
   {
     rules: {

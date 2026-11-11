@@ -10,10 +10,11 @@ queue_rules:
     queue_conditions:
       # Budget CI 5 min (règle user 2026-10-24) : le garde-fou du socle.
       - check-success = ci-budget
-      # CI réelle du dépôt (lint + typecheck, tests vitest, manifest).
+      # CI réelle du dépôt (lint + typecheck, tests vitest, manifest, démo Pages).
       - check-success = quality
       - check-success = test
       - check-success = manifest
+      - check-success = site
       - -conflict
       - -draft
       - base = main

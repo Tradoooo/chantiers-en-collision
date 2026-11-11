@@ -14,7 +14,10 @@
     "test:watch": "vitest",
     "check:manifest": "node scripts/check-manifest.mjs",
     "verify": "npm run lint && npm run typecheck && npm run check:manifest && npm run test",
-    "build": "tsc -p tsconfig.json --outDir dist"
+    "build": "tsc -p tsconfig.json --outDir dist",
+    "build:site": "esbuild site/demo/main.ts --bundle --format=iife --global-name=Chantiers --alias:node:crypto=./site/demo/crypto-stub.ts --minify --outfile=site/dist/demo.js && cp site/index.html site/styles.css site/dist/",
+    "check:site": "npm run build:site && node scripts/check-site-bundle.mjs",
+    "deploy:site": "bash scripts/deploy-site.sh"
   },
   "dependencies": {
     "@forge/api": "^8.5.0",
@@ -25,6 +28,7 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
     "js-yaml": "^5.5.0",
     "typescript": "^6.0.3",

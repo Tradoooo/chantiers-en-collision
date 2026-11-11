@@ -1,5 +1,15 @@
 # Judge guide
 
+## Route 0 — in the browser, nothing to install
+
+**<https://baptistefaisy.github.io/chantiers-en-collision/>** — the GitHub Pages demo bundles the
+real TypeScript engine (services + core + in-memory stores) via esbuild. Playground: two agents
+declare footprints, verdicts appear (try the presets: same file → D2 caution, two migrations →
+D4 wait, hotspot translations → lowered degree). Scenario: the eleven-step “Four agents” story
+replays live with every expectation checked. The same bundle is verified in CI (`site` job,
+`scripts/check-site-bundle.mjs`), so what you click is what the tests run.
+
+
 Four test paths, in increasing order of setup. **The first needs nothing but a browser and a Jira
 site**; the fourth needs nothing but `curl`. The demo site ships without a code repository, which
 is why path 1 exists (spec §24).

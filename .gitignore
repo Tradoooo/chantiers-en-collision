@@ -5,6 +5,9 @@ out/
 *.tsbuildinfo
 coverage/
 
+# Site (built artifact — served from the gh-pages branch)
+site/dist/
+
 # Forge
 .forge/
 *.forge.zip

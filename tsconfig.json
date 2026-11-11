@@ -3,7 +3,10 @@
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "Node",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
     "strict": true,
     "ignoreDeprecations": "6.0",
     "esModuleInterop": true,
@@ -15,8 +18,17 @@
     "jsxFragmentFactory": "ForgeUI.Fragment",
     "sourceMap": true,
     "outDir": "dist",
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/**/*", "tests/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*",
+    "tests/**/*",
+    "site/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }
