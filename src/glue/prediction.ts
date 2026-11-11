@@ -36,7 +36,9 @@ export async function computePrediction(
   issueKey: string,
 ): Promise<FootprintPrediction | undefined> {
   const repo = await predictionRepo(ctx);
-  if (repo === undefined || ctx.jira === undefined) return undefined;
+  if (repo === undefined || ctx.jira?.getIssue === undefined || ctx.jira.mergedHistory === undefined) {
+    return undefined;
+  }
   const ticket: TicketMeta = (await ctx.jira.getIssue(issueKey)) ?? { issueKey, components: [] };
   const history = await ctx.jira.mergedHistory(repo.slug);
   const result = predictFromHistory(ticket, history);

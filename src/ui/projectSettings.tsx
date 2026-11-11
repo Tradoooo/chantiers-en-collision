@@ -19,6 +19,7 @@ import ForgeUI, {
   Select,
   Tab,
   Tabs,
+  SectionMessage,
   Table,
   Text,
   TextArea,
@@ -27,6 +28,7 @@ import ForgeUI, {
   useAction,
 } from "@forge/ui";
 import type { ActionRouter } from "./issuePanel";
+import type { LearningReport } from "../services/learning";
 import type {
   PriorityCriterion,
   PriorityRules,
@@ -320,12 +322,78 @@ function HookCiTab(props: {
 /* Screen                                                              */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Tab (e) — learning loop (CC-25, spec §13)                           */
+/* ------------------------------------------------------------------ */
+
+function AccuracyTable(props: { learning: LearningReport }) {
+  const rows = props.learning.accuracy.byComponent;
+  if (rows.length === 0) {
+    return <Text>No merged worksite with a prediction yet — accuracy will appear here.</Text>;
+  }
+  return (
+    <Table>
+      <Head>
+        <Cell><Text>component</Text></Cell>
+        <Cell><Text>prediction accuracy</Text></Cell>
+        <Cell><Text>attested paths</Text></Cell>
+      </Head>
+      {rows.map((r) => (
+        <Row>
+          <Cell><Text>{r.component}</Text></Cell>
+          <Cell><Text>{`${Math.round(r.accuracy * 100)} %`}</Text></Cell>
+          <Cell><Text>{String(r.samples)}</Text></Cell>
+        </Row>
+      ))}
+    </Table>
+  );
+}
+
+function ProposalsList(props: { learning: LearningReport }) {
+  const proposals = props.learning.proposals;
+  if (proposals.length === 0) {
+    return <Text>No reclassification proposal — the zone map matches the observed reality.</Text>;
+  }
+  return (
+    <Fragment>
+      {proposals.map((p) => (
+        <SectionMessage
+          appearance="info"
+          title={`${p.pattern}: ${p.currentNature} → ${p.suggestedNature}`}
+        >
+          <Text>{`${p.evidence}. Apply it in the Zones tab when you agree.`}</Text>
+        </SectionMessage>
+      ))}
+    </Fragment>
+  );
+}
+
+function LearningTab(props: { learning?: LearningReport }) {
+  if (props.learning === undefined) {
+    return <Text>Learning report unavailable — register a repository first.</Text>;
+  }
+  const { fourNumbers } = props.learning;
+  return (
+    <Fragment>
+      <Heading size="small">Collisions seen</Heading>
+      <Text>
+        {`before code: ${fourNumbers.seenBeforeCode} · while working: ${fourNumbers.seenWhileWorking} · at PR: ${fourNumbers.seenAtPr} · missed until merge: ${fourNumbers.missedUntilMerge}`}
+      </Text>
+      <Heading size="small">Prediction accuracy by component</Heading>
+      <AccuracyTable learning={props.learning} />
+      <Heading size="small">Zone reclassification proposals</Heading>
+      <ProposalsList learning={props.learning} />
+    </Fragment>
+  );
+}
+
 export function ProjectSettings(props: {
   repos: RepoRecord[];
   zones: Zone[];
   rules: PriorityRules;
   hooksFile: string;
   ciSnippets: { name: string; content: string }[];
+  learning?: LearningReport;
   actions?: ActionRouter;
 }) {
   const send = useActionBridge(props.actions);
@@ -344,6 +412,9 @@ export function ProjectSettings(props: {
         </Tab>
         <Tab label="Hook & CI">
           <HookCiTab hooksFile={props.hooksFile} ciSnippets={props.ciSnippets} />
+        </Tab>
+        <Tab label="Learning">
+          <LearningTab learning={props.learning} />
         </Tab>
       </Tabs>
     </Fragment>

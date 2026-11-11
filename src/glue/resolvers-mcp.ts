@@ -23,7 +23,7 @@ import type {
 import type { Ctx } from "../services/ctx";
 import { checkZone, declareFootprint } from "../services/declare";
 import { reportConflict } from "../services/ingest";
-import { listClearWork, listCollisions, planParallelWork } from "../services/planning";
+import { listClearWork, listCollisions, nextClearTicket, planParallelWork } from "../services/planning";
 import { postNotice } from "../services/notices";
 import { reserveZone } from "../services/reservations";
 import { resolveCollision } from "../services/resolve";
@@ -295,6 +295,20 @@ export async function listCollisionsTool(request: ToolRequest): Promise<ToolResu
   };
 }
 
+export async function nextClearTicketTool(request: ToolRequest): Promise<ToolResult> {
+  const payload = payloadOf(request);
+  const jql = required(payload, "jql");
+  const session = str(payload, "session");
+  const ctx = await toolCtx(request, { sessionRef: session });
+  const next = await nextClearTicket(ctx, { jql, session });
+  return {
+    tool: "next-clear-ticket",
+    text: next.issueKey === undefined ? next.why : `${next.issueKey}: ${next.why}`,
+    issueKey: next.issueKey,
+    alternatives: next.alternatives,
+  };
+}
+
 export async function listClearWorkTool(request: ToolRequest): Promise<ToolResult> {
   const payload = payloadOf(request);
   const jql = required(payload, "jql");
@@ -441,6 +455,8 @@ export const MCP_TOOLS: Record<string, ToolHandler> = {
   listCollisions: listCollisionsTool,
   "list-clear-work": listClearWorkTool,
   listClearWork: listClearWorkTool,
+  "next-clear-ticket": nextClearTicketTool,
+  nextClearTicket: nextClearTicketTool,
   "plan-parallel-work": planParallelWorkTool,
   planParallelWork: planParallelWorkTool,
   "reserve-zone": reserveZoneTool,
@@ -455,7 +471,7 @@ export const MCP_TOOLS: Record<string, ToolHandler> = {
   reportConflict: reportConflictTool,
 };
 
-/** The 13 tool keys of manifest.yml (`modules.rovo:mcp[0].tools`). */
+/** The 14 tool keys of manifest.yml (`modules.rovo:mcp[0].tools`). */
 export const MCP_TOOL_KEYS = [
   "declare-footprint",
   "check-zone",
@@ -464,6 +480,7 @@ export const MCP_TOOL_KEYS = [
   "predict-footprint",
   "list-collisions",
   "list-clear-work",
+  "next-clear-ticket",
   "plan-parallel-work",
   "reserve-zone",
   "post-notice",

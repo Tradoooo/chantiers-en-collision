@@ -23,7 +23,7 @@ const err = (m) => errors.push(m);
 
 const EXPECTED_TOOLS = [
   "declare-footprint", "check-zone", "who-touches", "get-worksite",
-  "predict-footprint", "list-collisions", "list-clear-work",
+  "predict-footprint", "list-collisions", "list-clear-work", "next-clear-ticket",
   "plan-parallel-work", "reserve-zone", "post-notice",
   "resolve-collision", "close-worksite", "report-conflict",
 ];

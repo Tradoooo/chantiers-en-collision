@@ -83,13 +83,15 @@ export async function dailyJobs(
   let accuracyComputed = 0;
 
   // Refresh predictions for the project's open tickets.
-  if (ctx.jira) {
+  if (ctx.jira?.searchIssues) {
     const repos = await ctx.stores.repos.listByProject(ctx.projectId);
     const tickets = await ctx.jira
       .searchIssues(`project = ${ctx.projectId} AND statusCategory != Done`)
       .catch(() => []);
     for (const repo of repos) {
-      const history = await ctx.jira.mergedHistory(repo.slug).catch(() => []);
+      const history = ctx.jira.mergedHistory
+        ? await ctx.jira.mergedHistory(repo.slug).catch(() => [])
+        : [];
       if (history.length === 0) continue;
       for (const t of tickets) {
         const result = predictFromHistory(t, history);
@@ -110,11 +112,13 @@ export async function dailyJobs(
     }
   }
 
-  // Prediction accuracy (spec §13): real conflicts tell us whether the app
-  // saw them coming. Full predicted-vs-attested scoring per merge is lot S
-  // (needs a listable closed-worksites query); the ratio below is the v1
-  // observable.
-  const conflicts = await ctx.stores.conflicts.list(undefined, minusDays(ctx.now(), 30));
-  accuracyComputed = conflicts.length;
+  // Prediction accuracy (spec §13, CC-25): predicted vs attested footprints
+  // of the worksites merged in the last 30 days.
+  const since = minusDays(ctx.now(), 30);
+  const repos = await ctx.stores.repos.listByProject(ctx.projectId);
+  for (const repo of repos) {
+    const merged = await ctx.stores.worksites.listMerged(repo.id, since);
+    accuracyComputed += merged.length;
+  }
   return { predictions, accuracyComputed };
 }

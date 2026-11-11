@@ -74,6 +74,8 @@ export interface WorksiteStore {
   listIdleBefore(before: string): Promise<Worksite[]>;
   /** Dormant worksites dormant since before `before` (for auto-close). */
   listDormantBefore(before: string): Promise<Worksite[]>;
+  /** Closed worksites with outcome "merged" (prediction accuracy, spec §13). */
+  listMerged(repoId?: string, since?: string): Promise<Worksite[]>;
 }
 
 export interface FootprintStore {

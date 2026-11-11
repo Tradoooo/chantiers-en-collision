@@ -202,6 +202,24 @@ async function listDormantWorksites(before: string): Promise<Worksite[]> {
   return rows.map(toWorksite);
 }
 
+/** Closed + merged worksites (prediction accuracy, spec §13). No FK, no join:
+ *  filters are applied with dynamic SQL text (params stay bound). */
+async function listMergedWorksites(repoId?: string, since?: string): Promise<Worksite[]> {
+  let text = "SELECT * FROM worksite WHERE state = 'closed' AND outcome = 'merged'";
+  const params: string[] = [];
+  if (repoId !== undefined) {
+    text += " AND repo_id = ?";
+    params.push(repoId);
+  }
+  if (since !== undefined) {
+    text += " AND closed_at >= ?";
+    params.push(since);
+  }
+  text += " ORDER BY closed_at DESC";
+  const rows = await allText<WorksiteRow>(text, params);
+  return rows.map(toWorksite);
+}
+
 export function createWorksiteStore(): WorksiteStore {
   return {
     create: createWorksite,
@@ -213,6 +231,7 @@ export function createWorksiteStore(): WorksiteStore {
     listByAccount: listWorksitesByAccount,
     listIdleBefore: listIdleWorksites,
     listDormantBefore: listDormantWorksites,
+    listMerged: listMergedWorksites,
   };
 }
 

@@ -24,6 +24,7 @@ import type {
 import { parentDirs } from "../core/paths";
 import { zoneForPath } from "../core/zones";
 import type { Ctx } from "../services/ctx";
+import { learningReport, type LearningReport } from "../services/learning";
 import { createToken, type CreatedToken } from "../services/tokens";
 import { buildNeighborInfo, normalizeSlug } from "../services/shared";
 import { ciSnippets, hooksSettingsFile, type CiSnippet } from "./templates";
@@ -58,6 +59,8 @@ export interface ProjectSettingsData {
   ingestUrl: string;
   hooksFile: string;
   ciSnippets: CiSnippet[];
+  /** Learning loop (CC-25): prediction accuracy + zone reclassifications. */
+  learning?: LearningReport;
 }
 
 export interface PersonalSettingsData {
@@ -161,6 +164,7 @@ export async function projectSettingsData(ctx: Ctx): Promise<ProjectSettingsData
   for (const repo of repos) zones.push(...(await ctx.stores.zones.listByRepo(repo.id)));
   const rules = await ctx.stores.rules.get(ctx.projectId);
   const ingestUrl = await ingestBaseUrl();
+  const learning = await learningReport(ctx).catch(() => undefined);
   return {
     projectId: ctx.projectId,
     repos,
@@ -169,6 +173,7 @@ export async function projectSettingsData(ctx: Ctx): Promise<ProjectSettingsData
     ingestUrl,
     hooksFile: hooksSettingsFile(ingestUrl),
     ciSnippets: ciSnippets(ingestUrl),
+    learning,
   };
 }
 

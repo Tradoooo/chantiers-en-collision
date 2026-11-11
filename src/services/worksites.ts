@@ -39,7 +39,7 @@ export interface OpenInput {
 export async function openWorksite(ctx: Ctx, input: OpenInput): Promise<Worksite> {
   const { repo } = await resolveRepo(ctx, input.repoSlug);
   let ticket = input.ticket;
-  if (!ticket && ctx.jira) {
+  if (!ticket && ctx.jira?.getIssue) {
     ticket = (await ctx.jira.getIssue(input.issueKey)) ?? undefined;
   }
   const w = await ensureWorksite(ctx, {

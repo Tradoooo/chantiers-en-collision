@@ -278,16 +278,15 @@ async function projectSettingsScreen(
   const settings: ProjectSettingsData = await deps.projectSettingsData(ctx);
   // The screen's declared props (src/ui/projectSettings.tsx) — `projectId`
   // and `ingestUrl` stay in `data`, they are not part of the props.
-  return {
-    data: settings,
-    props: {
-      repos: settings.repos,
-      zones: settings.zones,
-      rules: settings.rules,
-      hooksFile: settings.hooksFile,
-      ciSnippets: settings.ciSnippets,
-    },
+  const props: Record<string, unknown> = {
+    repos: settings.repos,
+    zones: settings.zones,
+    rules: settings.rules,
+    hooksFile: settings.hooksFile,
+    ciSnippets: settings.ciSnippets,
   };
+  if (settings.learning !== undefined) props.learning = settings.learning;
+  return { data: settings, props };
 }
 
 async function personalSettingsScreen(

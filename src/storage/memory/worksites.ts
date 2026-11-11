@@ -111,5 +111,22 @@ export function createWorksiteStore(data: MemoryData, ids: IdGen): WorksiteStore
     listByAccount: (accountId) => listWorksitesByAccount(data, accountId),
     listIdleBefore: (before) => listIdleWorksitesBefore(data, before),
     listDormantBefore: (before) => listDormantWorksitesBefore(data, before),
+    listMerged: (repoId, since) => listMergedWorksites(data, repoId, since),
   };
+}
+
+/** Closed worksites with outcome "merged" (prediction accuracy, spec §13). */
+async function listMergedWorksites(
+  data: MemoryData,
+  repoId?: string,
+  since?: string,
+): Promise<Worksite[]> {
+  return pick(
+    data,
+    (w) =>
+      w.state === "closed" &&
+      w.outcome === "merged" &&
+      (repoId === undefined || w.repoId === repoId) &&
+      (since === undefined || (w.closedAt ?? w.lastActivityAt) >= since),
+  );
 }

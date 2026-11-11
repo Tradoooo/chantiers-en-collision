@@ -24,8 +24,8 @@ import type { Ctx } from "./ctx";
 import { loadOpenWorksites, resolveRepo } from "./shared";
 
 async function search(ctx: Ctx, jql: string): Promise<TicketMeta[]> {
-  if (!ctx.jira) {
-    throw new Error("planning tools require Jira access (ctx.jira port is missing)");
+  if (!ctx.jira?.searchIssues) {
+    throw new Error("planning tools require Jira access (ctx.jira.searchIssues is missing)");
   }
   return ctx.jira.searchIssues(jql);
 }
@@ -40,7 +40,7 @@ async function firstRepo(ctx: Ctx, repoSlug?: string) {
 }
 
 /** Declared/observed footprint of a ticket, else its stored/live prediction. */
-async function planTicketFor(
+export async function planTicketFor(
   ctx: Ctx,
   t: TicketMeta,
   repoId: string,
@@ -60,7 +60,7 @@ async function planTicketFor(
       }
     }
   }
-  if (entries.length === 0 && ctx.jira) {
+  if (entries.length === 0 && ctx.jira?.mergedHistory) {
     const history = await ctx.jira.mergedHistory(repoSlug).catch(() => []);
     for (const e of predictFromHistory(t, history).entries) {
       entries.push({ path: e.path, kind: e.kind, source: "predicted" });
@@ -78,7 +78,7 @@ async function planTicketFor(
 }
 
 /** Virtual worksites so detectCollisions can score ticket pairs. */
-function virtualSides(tickets: PlanTicket[], repoId: string): WorksiteWithEntries[] {
+export function virtualSides(tickets: PlanTicket[], repoId: string): WorksiteWithEntries[] {
   const now = "1970-01-01T00:00:00.000Z";
   return tickets.map((t, i) => ({
     worksite: {
@@ -142,7 +142,14 @@ export async function listClearWork(
 ): Promise<TicketMeta[]> {
   void input.session;
   const tickets = await search(ctx, input.jql);
-  const { repo, zones } = await firstRepo(ctx);
+  let found;
+  try {
+    found = await firstRepo(ctx);
+  } catch {
+    // No repository registered for this project yet: nothing can collide.
+    return tickets;
+  }
+  const { repo, zones } = found;
   const now = ctx.now();
   const open = await loadOpenWorksites(ctx, repo.id);
   const reservations = await ctx.stores.reservations.listActive(repo.id, now);
@@ -171,6 +178,61 @@ export async function listClearWork(
     if (!blocked && !frozen) clear.push(t);
   }
   return clear;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dispatcher — "the next clear ticket for agent N" (spec §27 vision)   */
+/* ------------------------------------------------------------------ */
+
+export interface NextClearTicket {
+  /** The ticket to start now; undefined when nothing is clear. */
+  issueKey?: string;
+  ticket?: TicketMeta;
+  /** Always explains WHY (no anonymous answers — spec §8). */
+  why: string;
+  /** Up to two runners-up, in order. */
+  alternatives: string[];
+}
+
+function ticketRank(t: TicketMeta): number {
+  return t.priorityRank ?? Number.MAX_SAFE_INTEGER;
+}
+
+function dueRank(t: TicketMeta): number {
+  return t.dueAt ? new Date(t.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * The dispatcher of spec §27: the orchestrator asks for "the next clear
+ * ticket for this worker" instead of reading a whole list. Ranking:
+ * ticket priority, then nearest due date, then issue key (stable).
+ */
+export async function nextClearTicket(
+  ctx: Ctx,
+  input: { jql: string; session?: string },
+): Promise<NextClearTicket> {
+  const clear = await listClearWork(ctx, input);
+  if (clear.length === 0) {
+    return {
+      why: "no clear ticket in this selection right now — every candidate collides with an open worksite, sits in a frozen zone, or is already taken",
+      alternatives: [],
+    };
+  }
+  const ranked = clear
+    .slice()
+    .sort(
+      (a, b) =>
+        ticketRank(a) - ticketRank(b) ||
+        dueRank(a) - dueRank(b) ||
+        a.issueKey.localeCompare(b.issueKey),
+    );
+  const next = ranked[0]!;
+  return {
+    issueKey: next.issueKey,
+    ticket: next,
+    why: `no collision with any open worksite; next by priority among ${clear.length} clear ticket(s)`,
+    alternatives: ranked.slice(1, 3).map((t) => t.issueKey),
+  };
 }
 
 /** Collision-free waves for N workers (core/waves.planWaves). */

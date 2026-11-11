@@ -62,6 +62,7 @@ const TOOL_FUNCTION_KEYS: Record<string, string> = {
   "predict-footprint": "predictFootprintTool",
   "list-collisions": "listCollisions",
   "list-clear-work": "listClearWork",
+  "next-clear-ticket": "nextClearTicketTool",
   "plan-parallel-work": "planParallelWork",
   "reserve-zone": "reserveZone",
   "post-notice": "postNotice",
@@ -122,6 +123,7 @@ export const getWorksite = toolHandler("get-worksite");
 export const predictFootprintTool = toolHandler("predict-footprint");
 export const listCollisions = toolHandler("list-collisions");
 export const listClearWork = toolHandler("list-clear-work");
+export const nextClearTicketTool = toolHandler("next-clear-ticket");
 export const planParallelWork = toolHandler("plan-parallel-work");
 export const reserveZone = toolHandler("reserve-zone");
 export const postNotice = toolHandler("post-notice");

@@ -60,7 +60,7 @@ async function planHandover(
       blockedIssueKey: yields.issueKey,
       blockerIssueKey: blocker.issueKey,
     };
-    if (ctx.jira) {
+    if (ctx.jira?.createIssueLink) {
       await ctx.jira.createIssueLink(yields.issueKey, blocker.issueKey).catch(() => undefined);
     }
   }

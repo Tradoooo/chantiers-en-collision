@@ -114,7 +114,7 @@ export async function declareFootprint(ctx: Ctx, input: DeclareInput): Promise<V
   const locale = input.locale ?? "en";
   const { repo, zones } = await resolveRepo(ctx, input.repoSlug);
   const rules = await rulesFor(ctx);
-  const ticket = ctx.jira
+  const ticket = ctx.jira?.getIssue
     ? ((await ctx.jira.getIssue(input.issueKey)) ?? undefined)
     : undefined;
   const w = await ensureWorksite(ctx, {
@@ -146,7 +146,7 @@ export async function declareFootprint(ctx: Ctx, input: DeclareInput): Promise<V
     { deliverNotices: true, persist: true },
   );
 
-  if (ctx.jira) {
+  if (ctx.jira?.setCollisionsField) {
     const worst = verdict.collisions[0];
     const value = worst
       ? `${verdict.collisions.length} collision(s), worst D${worst.degree} (${worst.path})`

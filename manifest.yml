@@ -28,6 +28,7 @@ modules:
         - predict-footprint
         - list-collisions
         - list-clear-work
+        - next-clear-ticket
         - plan-parallel-work
         - reserve-zone
         - post-notice
@@ -166,6 +167,26 @@ modules:
           type: string
           required: true
           description: "JQL query selecting candidate tickets"
+        session:
+          title: Session
+          type: string
+          required: false
+          description: "Agent session reference"
+    - key: next-clear-ticket
+      name: Next clear ticket
+      function: nextClearTicketTool
+      actionVerb: GET
+      description: |
+        The dispatcher: returns THE next ticket this worker can start right
+        now — no collision with any open worksite, ranked by priority and
+        due date — with two alternatives. An orchestrator asks, launches,
+        then asks again.
+      inputs:
+        jql:
+          title: JQL
+          type: string
+          required: true
+          description: "JQL query selecting the candidate tickets"
         session:
           title: Session
           type: string
@@ -466,6 +487,7 @@ modules:
         - get-worksite
         - list-collisions
         - list-clear-work
+        - next-clear-ticket
         - plan-parallel-work
       skills:
         - avoid-collisions
@@ -500,6 +522,8 @@ modules:
       handler: index.listCollisions
     - key: listClearWork
       handler: index.listClearWork
+    - key: nextClearTicketTool
+      handler: index.nextClearTicketTool
     - key: planParallelWork
       handler: index.planParallelWork
     - key: reserveZone
