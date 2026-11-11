@@ -2,7 +2,8 @@ name: ci
 
 # Budget rule (user 2026-10-24): every CI verdict in ≤ 5 minutes.
 # timeout-minutes: 5 on every job, concurrency with cancel-in-progress,
-# shallow checkout, npm cache. Self-hosted workers on r630
+# shallow checkout with clean:false (self-hosted workspaces persist —
+# see .github/actions/npm-cache/action.yml). Workers on r630
 # (label chantiers-en-collision-worker) registered by fabrique-repo.sh.
 
 on:
@@ -32,6 +33,7 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+          clean: false
       - uses: ./.github/actions/npm-cache
       - run: npm run lint
       - run: npm run typecheck
@@ -45,6 +47,7 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+          clean: false
       - uses: ./.github/actions/npm-cache
       - run: npm run test
 
@@ -57,5 +60,6 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+          clean: false
       - uses: ./.github/actions/npm-cache
       - run: npm run check:manifest

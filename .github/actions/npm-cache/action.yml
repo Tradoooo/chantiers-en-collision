@@ -1,21 +1,25 @@
-name: npm cache + install
+name: npm deps (persistent self-hosted)
 
-# Shared step: restore ~/.npm and node_modules from the lockfile hash,
-# then `npm ci` (near-instant when the cache hits). CI budget rule:
-# keep every job under 5 minutes.
+# CI budget rule (user 2026-10-24): verdict in ≤ 5 min, never lengthen a
+# timeout. On self-hosted runners the workspace persists, so:
+#  - checkout MUST use clean:false (default git clean wipes node_modules
+#    and forces a cold npm ci on every run);
+#  - npm ci runs only when package-lock.json actually changed (stamp file);
+#  - no actions/cache upload/download of node_modules (hundreds of MB) —
+#    ~/.npm is shared and persistent on this machine anyway.
 
 runs:
   using: composite
   steps:
-    - name: Cache npm
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.npm
-          node_modules
-        key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-        restore-keys: |
-          npm-${{ runner.os }}-
-    - name: Install dependencies
+    - name: Install dependencies (only when the lockfile changed)
       shell: bash
-      run: npm ci --prefer-offline --no-audit --no-fund
+      run: |
+        set -euo pipefail
+        STAMP=node_modules/.lock-stamp
+        if [ -f "$STAMP" ] && cmp -s package-lock.json "$STAMP"; then
+          echo "node_modules up to date — skipping npm ci"
+        else
+          timeout 200 npm ci --prefer-offline --no-audit --no-fund
+          mkdir -p node_modules
+          cp package-lock.json "$STAMP"
+        fi
