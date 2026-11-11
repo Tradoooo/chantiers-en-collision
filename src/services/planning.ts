@@ -1,49 +1,263 @@
 /**
  * services/planning — read-only planning tools (CC-11, CC-12, §12, §13).
- * Owner: workstream H. Replace stubs; keep signatures EXACTLY.
- * JQL execution goes through ctx.jira.searchIssues (injected port); in tests
- * and simulation a fake port supplies the tickets.
+ * JQL execution goes through ctx.jira.searchIssues (injected port); tests
+ * and the simulation console supply a fake port.
  */
 
+import { detectCollisions } from "../core/collisions";
+import type { WorksiteWithEntries } from "../core/collisions";
+import { predictFromHistory } from "../core/predict";
+import { planWaves } from "../core/waves";
+import { entriesOverlap, classifyPath } from "../core/paths";
+import { isFrozen, zoneForPath } from "../core/zones";
 import type {
   Collision,
   CollisionStats,
+  FootprintSource,
+  PlanTicket,
   SprintCheckData,
   TicketMeta,
   WavePlan,
 } from "../core/types";
 import type { Ctx } from "./ctx";
+import { loadOpenWorksites, resolveRepo } from "./shared";
+
+async function search(ctx: Ctx, jql: string): Promise<TicketMeta[]> {
+  if (!ctx.jira) {
+    throw new Error("planning tools require Jira access (ctx.jira port is missing)");
+  }
+  return ctx.jira.searchIssues(jql);
+}
+
+async function firstRepo(ctx: Ctx, repoSlug?: string) {
+  if (repoSlug) return resolveRepo(ctx, repoSlug);
+  const repos = await ctx.stores.repos.listByProject(ctx.projectId);
+  const repo = repos[0];
+  if (!repo) throw new Error("no repository registered for this project yet");
+  const zones = await ctx.stores.zones.listByRepo(repo.id);
+  return { repo, zones };
+}
+
+/** Declared/observed footprint of a ticket, else its stored/live prediction. */
+async function planTicketFor(
+  ctx: Ctx,
+  t: TicketMeta,
+  repoId: string,
+  repoSlug: string,
+): Promise<PlanTicket> {
+  const entries: PlanTicket["entries"] = [];
+  for (const w of await ctx.stores.worksites.findByIssue(t.issueKey, repoId)) {
+    for (const e of await ctx.stores.footprints.listByWorksite(w.id)) {
+      entries.push({ path: e.path, kind: e.kind, source: e.source });
+    }
+  }
+  if (entries.length === 0) {
+    const stored = await ctx.stores.predictions.findByIssue(t.issueKey, repoId);
+    for (const p of stored) {
+      for (const e of p.entries) {
+        entries.push({ path: e.path, kind: e.kind, source: "predicted" as FootprintSource });
+      }
+    }
+  }
+  if (entries.length === 0 && ctx.jira) {
+    const history = await ctx.jira.mergedHistory(repoSlug).catch(() => []);
+    for (const e of predictFromHistory(t, history).entries) {
+      entries.push({ path: e.path, kind: e.kind, source: "predicted" });
+    }
+  }
+  return {
+    issueKey: t.issueKey,
+    summary: t.summary,
+    components: t.components,
+    priorityRank: t.priorityRank,
+    dueAt: t.dueAt,
+    incident: t.incident,
+    entries,
+  };
+}
+
+/** Virtual worksites so detectCollisions can score ticket pairs. */
+function virtualSides(tickets: PlanTicket[], repoId: string): WorksiteWithEntries[] {
+  const now = "1970-01-01T00:00:00.000Z";
+  return tickets.map((t, i) => ({
+    worksite: {
+      id: `plan-${i}-${t.issueKey}`,
+      issueKey: t.issueKey,
+      repoId,
+      accountId: `plan-${i}`,
+      kind: "agent" as const,
+      state: "planned" as const,
+      openedAt: now,
+      lastActivityAt: now,
+    },
+    entries: t.entries.map((e) => ({
+      worksiteId: `plan-${i}-${t.issueKey}`,
+      path: e.path,
+      kind: e.kind,
+      source: e.source,
+      mode: "edit" as const,
+      firstAt: now,
+      lastAt: now,
+    })),
+  }));
+}
 
 /** Colliding pairs among the tickets matched by the JQL. */
-export async function listCollisions(_ctx: Ctx, _input: { jql: string }): Promise<Collision[]> {
-  throw new Error("TODO(planning): not implemented — see docs/CONTRACTS.md");
+export async function listCollisions(
+  ctx: Ctx,
+  input: { jql: string },
+): Promise<Collision[]> {
+  const tickets = await search(ctx, input.jql);
+  const { repo } = await firstRepo(ctx);
+  const zones = await ctx.stores.zones.listByRepo(repo.id);
+  const plans: PlanTicket[] = [];
+  for (const t of tickets) plans.push(await planTicketFor(ctx, t, repo.id, repo.slug));
+  const sides = virtualSides(plans, repo.id);
+  const now = ctx.now();
+  const out: Collision[] = [];
+  const seen = new Set<string>();
+  for (const side of sides) {
+    const drafts = detectCollisions(side, sides, {
+      zones,
+      reservations: [],
+      now,
+      hardMode: false,
+    });
+    for (const d of drafts) {
+      if (d.degree < 1) continue; // planning cares about real risk, not D0
+      const key = `${d.worksiteA}|${d.worksiteB}|${d.zoneId ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ ...d, id: key, state: "open", detectedAt: now });
+    }
+  }
+  return out;
 }
 
 /** Ready tickets nobody collides with — what an idle agent can start now. */
 export async function listClearWork(
-  _ctx: Ctx,
-  _input: { jql: string; session?: string },
+  ctx: Ctx,
+  input: { jql: string; session?: string },
 ): Promise<TicketMeta[]> {
-  throw new Error("TODO(planning): not implemented — see docs/CONTRACTS.md");
+  void input.session;
+  const tickets = await search(ctx, input.jql);
+  const { repo, zones } = await firstRepo(ctx);
+  const now = ctx.now();
+  const open = await loadOpenWorksites(ctx, repo.id);
+  const reservations = await ctx.stores.reservations.listActive(repo.id, now);
+  const busyIssueKeys = new Set(open.map((o) => o.worksite.issueKey));
+
+  const clear: TicketMeta[] = [];
+  for (const t of tickets) {
+    if (busyIssueKeys.has(t.issueKey)) continue; // someone is already on it
+    const plan = await planTicketFor(ctx, t, repo.id, repo.slug);
+    if (plan.entries.length === 0) {
+      clear.push(t); // no footprint known: nothing to collide with
+      continue;
+    }
+    const side = virtualSides([plan], repo.id)[0]!;
+    const drafts = detectCollisions(side, open, {
+      zones,
+      reservations,
+      now,
+      hardMode: false,
+    });
+    const blocked = drafts.some((d) => d.degree >= 1);
+    const frozen = plan.entries.some((e) => {
+      const zone = zoneForPath(zones, e.path);
+      return zone !== undefined && isFrozen(zone, now);
+    });
+    if (!blocked && !frozen) clear.push(t);
+  }
+  return clear;
 }
 
 /** Collision-free waves for N workers (core/waves.planWaves). */
 export async function planParallelWork(
-  _ctx: Ctx,
-  _input: { jql: string; workers: number },
+  ctx: Ctx,
+  input: { jql: string; workers: number },
 ): Promise<WavePlan> {
-  throw new Error("TODO(planning): not implemented — see docs/CONTRACTS.md");
+  const tickets = await search(ctx, input.jql);
+  const { repo, zones } = await firstRepo(ctx);
+  const plans: PlanTicket[] = [];
+  for (const t of tickets) plans.push(await planTicketFor(ctx, t, repo.id, repo.slug));
+  return planWaves(plans, Math.max(1, input.workers), { zones });
 }
 
 /** Sprint verification: risky pairs, hinges, suggested order (CC-19). */
-export async function sprintCheck(_ctx: Ctx, _issueKeys: string[]): Promise<SprintCheckData> {
-  throw new Error("TODO(planning): not implemented — see docs/CONTRACTS.md");
+export async function sprintCheck(
+  ctx: Ctx,
+  issueKeys: string[],
+): Promise<SprintCheckData> {
+  if (issueKeys.length === 0) {
+    return {
+      tickets: [],
+      riskyPairs: [],
+      hinges: [],
+      suggestedOrder: [],
+      confidence: "high",
+    };
+  }
+  const tickets = await search(ctx, `issue in (${issueKeys.join(",")})`);
+  const { repo, zones } = await firstRepo(ctx);
+  const plans: PlanTicket[] = [];
+  for (const t of tickets) plans.push(await planTicketFor(ctx, t, repo.id, repo.slug));
+
+  // Risky pairs: score every ticket pair through the real detector.
+  const sides = virtualSides(plans, repo.id);
+  const riskyPairs: SprintCheckData["riskyPairs"] = [];
+  const seen = new Set<string>();
+  for (const side of sides) {
+    for (const d of detectCollisions(side, sides, {
+      zones,
+      reservations: [],
+      now: ctx.now(),
+      hardMode: false,
+    })) {
+      if (d.degree < 2) continue;
+      const key = `${d.worksiteA}|${d.worksiteB}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const a = sides.find((s) => s.worksite.id === d.worksiteA);
+      const b = sides.find((s) => s.worksite.id === d.worksiteB);
+      riskyPairs.push({
+        a: a?.worksite.issueKey ?? d.worksiteA,
+        b: b?.worksite.issueKey ?? d.worksiteB,
+        degree: d.degree,
+        path: d.path,
+        zoneName: zones.find((z) => z.id === d.zoneId)?.name,
+      });
+    }
+  }
+
+  const plan = planWaves(plans, Math.max(plans.length, 1), { zones });
+  return {
+    tickets: plans,
+    riskyPairs,
+    hinges: plan.hinges,
+    suggestedOrder: plan.waves.flat(),
+    confidence: plan.confidence,
+    confidenceNote: plan.confidenceNote,
+  };
 }
 
-/** The four numbers of spec §13 (missedUntilMerge comes from real_conflict). */
+/** The four numbers of spec §13 (missedUntilMerge comes from real conflicts). */
 export async function collisionStats(
-  _ctx: Ctx,
-  _input?: { repoSlug?: string; since?: string },
+  ctx: Ctx,
+  input?: { repoSlug?: string; since?: string },
 ): Promise<CollisionStats> {
-  throw new Error("TODO(planning): not implemented — see docs/CONTRACTS.md");
+  const { repo } = await firstRepo(ctx, input?.repoSlug);
+  const counts = await ctx.stores.collisions.countByPhase(repo.id, input?.since);
+  const conflicts = await ctx.stores.conflicts.list(repo.id, input?.since);
+  return {
+    seenBeforeCode: counts["before-code"] ?? 0,
+    seenWhileWorking: counts["live"] ?? 0,
+    seenAtPr: counts["pr"] ?? 0,
+    missedUntilMerge: conflicts.filter((c) => !c.wasDetected).length,
+  };
+}
+
+/** Overlap utility re-exported for the glue (kept local to planning). */
+export function pathsCollide(a: string, b: string): boolean {
+  return entriesOverlap(a, classifyPath(a), b, classifyPath(b));
 }

@@ -1,12 +1,13 @@
 /**
  * services/reservations — bounded exclusive reservations (CC-07).
- * Owner: workstream G. Replace stubs; keep signatures EXACTLY.
- * Nothing eternal: default 2 h, max 24 h (core/lifecycle.reservationExpiry);
- * refused with a reason when another active hard reservation overlaps.
+ * Nothing eternal: default 2 h, max 24 h (core/lifecycle), refused with a
+ * reason when another active reservation overlaps.
  */
 
-import type { ReservationResult } from "../core/types";
+import { reservationExpiry } from "../core/lifecycle";
+import type { Reservation, ReservationResult } from "../core/types";
 import type { Ctx } from "./ctx";
+import { ensureWorksite, logEvent, resolveRepo, rulesFor, splitPathsBlock } from "./shared";
 
 export interface ReserveInput {
   issueKey: string;
@@ -20,12 +21,52 @@ export interface ReserveInput {
 }
 
 export async function reserveZone(
-  _ctx: Ctx,
-  _input: ReserveInput,
+  ctx: Ctx,
+  input: ReserveInput,
 ): Promise<ReservationResult> {
-  throw new Error("TODO(reservations): not implemented — see docs/CONTRACTS.md");
+  const now = ctx.now();
+  const patterns = splitPathsBlock(input.paths);
+  if (patterns.length === 0) {
+    return { refused: true, reason: "reserve-zone: at least one path is required" };
+  }
+  const { repo } = await resolveRepo(ctx, input.repoSlug);
+  const rules = await rulesFor(ctx);
+  const w = await ensureWorksite(ctx, {
+    issueKey: input.issueKey,
+    repoId: repo.id,
+    sessionRef: ctx.identity.sessionRef,
+  });
+
+  const active = await ctx.stores.reservations.findActiveOverlapping(repo.id, patterns, now);
+  const foreign = active.find((r) => r.worksiteId !== w.id);
+  if (foreign) {
+    const owner = await ctx.stores.worksites.findById(foreign.worksiteId);
+    return {
+      refused: true,
+      reason: `already reserved by ${owner?.issueKey ?? foreign.worksiteId} until ${foreign.expiresAt}`,
+      conflicting: foreign,
+    };
+  }
+
+  const reservation: Reservation = await ctx.stores.reservations.create({
+    worksiteId: w.id,
+    repoId: repo.id,
+    patterns,
+    hard: (input.hard ?? false) && rules.hardMode,
+    reason: input.reason,
+    createdAt: now,
+    expiresAt: reservationExpiry(now, input.minutes),
+  });
+  await logEvent(ctx, "reservation.created", w.id, {
+    patterns,
+    expiresAt: reservation.expiresAt,
+    hard: reservation.hard,
+  });
+  return reservation;
 }
 
-export async function releaseReservation(_ctx: Ctx, _id: string): Promise<boolean> {
-  throw new Error("TODO(reservations): not implemented — see docs/CONTRACTS.md");
+export async function releaseReservation(ctx: Ctx, id: string): Promise<boolean> {
+  const released = await ctx.stores.reservations.release(id, ctx.now());
+  if (released) await logEvent(ctx, "reservation.released", undefined, { id });
+  return released;
 }

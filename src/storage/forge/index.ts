@@ -1,15 +1,42 @@
 /**
  * storage/forge — Forge SQL implementation of every store.
- * Owner: workstream E. Replace the stub; keep the signature EXACTLY.
  *
- * This is the ONLY place (with schema.ts) allowed to import "@forge/api".
- * Split helpers across files under storage/forge/ to stay under 500 lines
- * per file; index.ts re-assembles the Stores bundle.
- * Row mapping: snake_case columns → camelCase domain types (core/types).
+ * The ONLY place (with schema.ts) importing "@forge/sql" (through db.ts).
+ * Each store lives in its own file; this index re-assembles the Stores
+ * bundle expected by src/services/ctx.ts.
  */
 
 import type { Stores } from "../interfaces";
+import { createRepoStore, createZoneStore } from "./repos";
+import { createSessionStore } from "./sessions";
+import { createWorksiteStore } from "./worksites";
+import { createFootprintStore } from "./footprints";
+import { createCollisionStore } from "./collisions";
+import { createReservationStore } from "./reservations";
+import { createNoticeStore } from "./notices";
+import { createPredictionStore } from "./predictions";
+import {
+  createConflictStore,
+  createEventStore,
+  createRulesStore,
+  createTokenStore,
+} from "./misc";
 
 export function createForgeStores(): Stores {
-  throw new Error("TODO(forge-stores): not implemented — see docs/CONTRACTS.md");
+  const zones = createZoneStore();
+  return {
+    repos: createRepoStore({ seedZones: (repoId) => zones.seedDefaults(repoId).then(() => undefined) }),
+    zones,
+    sessions: createSessionStore(),
+    worksites: createWorksiteStore(),
+    footprints: createFootprintStore(),
+    collisions: createCollisionStore(),
+    reservations: createReservationStore(),
+    notices: createNoticeStore(),
+    predictions: createPredictionStore(),
+    conflicts: createConflictStore(),
+    tokens: createTokenStore(),
+    events: createEventStore(),
+    rules: createRulesStore(),
+  };
 }

@@ -1,0 +1,38 @@
+# Bitbucket Pipelines — "Chantiers en collision" attested footprint (spec §10, CC-13).
+# Step 1 posts the files this branch changed since it diverged from the base branch, so the
+# app records an ATTESTED footprint — a developer who installed nothing becomes visible too.
+# Step 2 is optional: report a real conflict (paths in conflict) back to the app.
+# Repository variables: CHANTIER_URL = https://<INSTALLATION>.webtrigger.atlassian.app/v2/<APP_ID>
+# /ingest (no trailing route), CHANTIER_PROJECT_TOKEN (project token, /ci/* routes only),
+# CHANTIER_REPO_SLUG (optional). Fail-open: this never blocks a build.
+image: atlassian/default-image:4
+clone:
+  depth: full # the three-dot diff and the merge test need the divergence point
+pipelines:
+  branches:
+    '**':
+      - step:
+          name: Chantiers - attested footprint
+          max-time: 5
+          script:
+            - BASE="${BITBUCKET_PR_DESTINATION_BRANCH:-main}"
+            - SLUG="${CHANTIER_REPO_SLUG:-$BITBUCKET_REPO_FULL_NAME}"
+            - git fetch --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" || true
+            - |
+              ISSUE_KEY="$(printf '%s' "$BITBUCKET_BRANCH" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | head -n1 || true)"
+              CHANGED="$(git diff --name-only "origin/$BASE...HEAD")" || exit 0 # no merge base: skip
+              FILES="$(printf '%s\n' "$CHANGED" | sed 's/\\/\\\\/g; s/"/\\"/g' | sed '/^$/d; s/.*/"&"/' | paste -sd, -)"
+              curl -sS --max-time 30 -X POST "$CHANTIER_URL/ci/footprint" -H "Authorization: Bearer $CHANTIER_PROJECT_TOKEN" -H "Content-Type: application/json" -d "{\"repoSlug\":\"$SLUG\",\"branch\":\"$BITBUCKET_BRANCH\",\"baseBranch\":\"$BASE\",\"issueKey\":\"$ISSUE_KEY\",\"files\":[$FILES]}" || true
+      - step:
+          name: Chantiers - report a real conflict (optional)
+          max-time: 5
+          script:
+            - BASE="${BITBUCKET_PR_DESTINATION_BRANCH:-main}"
+            - SLUG="${CHANTIER_REPO_SLUG:-$BITBUCKET_REPO_FULL_NAME}"
+            - git fetch --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" || true
+            - |
+              git merge --no-commit --no-ff "origin/$BASE" >/dev/null 2>&1 && { git merge --abort 2>/dev/null || true; exit 0; }
+              ISSUE_KEY="$(printf '%s' "$BITBUCKET_BRANCH" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | head -n1 || true)"
+              PATHS="$(git diff --name-only --diff-filter=U | awk 'NR>1{printf "\\n"} {printf "%s",$0}' | sed 's/"/\\"/g')"
+              curl -sS --max-time 30 -X POST "$CHANTIER_URL/ci/conflict" -H "Authorization: Bearer $CHANTIER_PROJECT_TOKEN" -H "Content-Type: application/json" -d "{\"issueKey\":\"$ISSUE_KEY\",\"repoSlug\":\"$SLUG\",\"paths\":\"$PATHS\"}" || true
+              git merge --abort 2>/dev/null || true

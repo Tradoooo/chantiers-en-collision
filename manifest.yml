@@ -8,9 +8,6 @@
 # app.id below is a placeholder — replace it with the real id given by
 # `forge create` (never commit a real secret here).
 
-runtime:
-  name: nodejs22.x
-
 app:
   id: ari:cloud:ecosystem::app/11111111-2222-3333-4444-555555555555
   runtime:
@@ -334,66 +331,96 @@ modules:
         type: dynamic
 
   # ------------------------------------------------------------- Jira modules
-  # TODO(forge-lint): confirm exact properties for each UI module below
-  # against manifest-reference/modules/index-jira (title/render/function/resource).
+  # Schema checked against manifest-reference/modules/{jira-issue-panel,
+  # jira-project-page,jira-dashboard-gadget,jira-custom-field,jql-function}
+  # (fetched 2026-11-11).
+  #
+  # UI modules point at a FUNCTION (`function: main`): this app renders with
+  # UI kit 1 (`@forge/ui` 1.11, `render()` in src/glue/ui-resolvers.ts), whose
+  # module property is `function`. The documented `resource:` + `render: native`
+  # + `resolver: {function:}` triple belongs to Custom UI / UI kit 2
+  # (`@forge/react`) and would require a static resource bundle this app has
+  # not got. `render: native:<key>` (the previous draft) is not a documented
+  # value at all — `render` only ever takes the literal `native`.
+  # NOTE: `forge lint` could not arbitrate — the `forge` binary on this machine
+  # is Foundry's Solidity toolchain (1.9.0, "Lint Solidity source files"), it
+  # answers "nothing to lint" here. See the workstream I report.
   jira:issuePanel:
     - key: worksite-panel
       title: Worksite
+      # icon is required by jira:issuePanel (a generic icon is used otherwise).
+      icon: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
       function: main
-      render: native:worksite-panel
-      resource: main
   jira:projectPage:
     - key: worksite-map
       title: Worksite map
       function: main
-      render: native:worksite-map
-      resource: main
   jira:sprintAction:
     - key: sprint-check
       title: Check collisions
       function: main
-      render: native:sprint-check
-      resource: main
   jira:projectSettingsPage:
     - key: project-settings
       title: Worksites
       function: main
-      render: native:project-settings
-      resource: main
   jira:personalSettingsPage:
     - key: personal-settings
       title: My worksites
       function: main
-      render: native:personal-settings
-      resource: main
   jira:dashboardGadget:
     - key: collision-stats
+      # title, description and thumbnail are all required by this module.
       title: Collision stats
+      description: The four numbers — collisions seen before code, while working, at the PR, and missed until the merge.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
       function: main
-      render: native:collision-stats
-      resource: main
   jira:customField:
     - key: collisions-field
       name: Collisions
       description: Open collision count and worst degree for this ticket
+      # Read-only for humans: the app writes it (JiraPort.setCollisionsField)
+      # after every verdict. Its real `customfield_xxxxx` id is assigned at
+      # install time and resolved at runtime (env CHANTIERS_COLLISIONS_FIELD_ID
+      # or GET /rest/api/3/field matched on the name below).
       type: string
+      readOnly: true
+  # jira:jqlFunction needs `operators` and `types` (both required) and declares
+  # its arguments; the previous `example` key is not part of the schema.
+  # The handler returns a JQL PREDICATE, e.g. `issuekey in (PROJ-1, PROJ-2)`.
   jira:jqlFunction:
     - key: colliding-work
       name: collidingWork
       function: jqlCollidingWork
-      example: issue in collidingWork()
+      types:
+        - issue
+      operators:
+        - in
+        - "not in"
     - key: collides-with
       name: collidesWith
       function: jqlCollidesWith
-      example: 'issue in collidesWith("PROJ-88")'
+      types:
+        - issue
+      operators:
+        - in
+        - "not in"
+      arguments:
+        - name: issueKey
+          required: true
 
   # ------------------------------------------------------------- triggers
+  # `ignoreSelf` matters: the app writes the "Collisions" custom field after
+  # every verdict, which fires avi:jira:updated:issue — without it the trigger
+  # would re-enter itself (manifest-reference/modules/trigger, filter reference).
   trigger:
     - key: issue-events
       events:
         - avi:jira:created:issue
         - avi:jira:updated:issue
       function: issueEvents
+      filter:
+        appIsLicensed: true
+        ignoreSelf: true
 
   scheduledTrigger:
     - key: five-minute-sweep
@@ -403,9 +430,24 @@ modules:
       function: dailyJobs
       interval: day
 
+  # ------------------------------------------------------------- Forge SQL
+  # Required to use Forge SQL at all (manifest-reference/modules/sql): one
+  # module per app, `engine: mysql` is the only supported value. The DDL lives
+  # in src/storage/schema.ts and is applied idempotently on every cold start.
+  sql:
+    - key: main
+      engine: mysql
+
   # ------------------------------------------------------------- Rovo agent & skill
-  # TODO(forge-lint): confirm rovo:agent / rovo:skill schema
-  # (manifest-reference/modules/rovo-agent and rovo-skill).
+  # Schema checked against manifest-reference/modules/rovo-agent and
+  # .../rovo-skill (fetched 2026-11-11).
+  #  - rovo:agent: key, name (≤ 30 chars), description, prompt, conversationStarters,
+  #    actions (action keys), skills (rovo:skill keys).
+  #  - rovo:skill has NO name/description/prompt properties: it is
+  #    `key` + `source.dir` (a directory holding SKILL.md, whose frontmatter
+  #    `name` must equal the directory name) + optional `dependencies.tools`.
+  #  - `prompt:` as a relative path needs Forge CLI ≥ 10.6.0; with an older CLI
+  #    the string is taken literally. Owned by workstream L (prompts/*.md).
   rovo:agent:
     - key: site-foreman
       name: Site foreman
@@ -425,12 +467,20 @@ modules:
         - list-collisions
         - list-clear-work
         - plan-parallel-work
+      skills:
+        - avoid-collisions
 
   rovo:skill:
     - key: avoid-collisions
-      name: avoid-collisions
-      description: The agent protocol — declare before writing, read the verdict, redeclare on drift.
-      prompt: prompts/avoid-collisions.md
+      source:
+        dir: skills/avoid-collisions
+      dependencies:
+        tools:
+          - declare-footprint
+          - check-zone
+          - list-clear-work
+          - post-notice
+          - close-worksite
 
   # ------------------------------------------------------------- functions
   function:
@@ -468,8 +518,13 @@ modules:
       handler: index.issueEvents
     - key: sweepFiveMinute
       handler: index.sweepFiveMinute
+      # A sweep walks every project's worksites: 2 min instead of the default 55 s.
+      timeoutSeconds: 120
     - key: dailyJobs
       handler: index.dailyJobs
+      # Predictions + accuracy over the merged history: the documented maximum
+      # for a scheduled trigger is 900 s (manifest-reference/modules/function).
+      timeoutSeconds: 900
     - key: jqlCollidingWork
       handler: index.jqlCollidingWork
     - key: jqlCollidesWith

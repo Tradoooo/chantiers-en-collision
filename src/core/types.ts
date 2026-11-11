@@ -283,6 +283,8 @@ export interface VerdictCollisionInfo {
   sameTicket?: boolean;
   /** Agents driven by the same pilot. */
   samePilot?: boolean;
+  /** Prediction-only side: degree capped, information labelled "probable". */
+  probable?: boolean;
   /** Hard mode would deny edits here. */
   hardDeny?: boolean;
 }
@@ -438,6 +440,8 @@ export interface HookTouchEvent {
   cwd?: string;
   agentRef?: string;
   agentType?: string;
+  /** Repository slug, from the X-Chantier-Repo header (glue-provided). */
+  repoSlug?: string;
 }
 
 export interface HookOpenEvent {
@@ -445,6 +449,8 @@ export interface HookOpenEvent {
   branch: string;
   cwd?: string;
   agentRef?: string;
+  /** Repository slug, from the X-Chantier-Repo header (glue-provided). */
+  repoSlug?: string;
 }
 
 /** What the hook endpoint answers to the agent client. */
@@ -662,6 +668,10 @@ export type MsgId =
   | "verdict.caution"
   | "verdict.wait"
   | "verdict.stop"
+  | "zone.exclusive"
+  | "zone.hotspot"
+  | "zone.frozen"
+  | "zone.ordinary"
   | "label.verdict"
   | "label.collision"
   | "label.neighbor"

@@ -29,6 +29,7 @@ import {
   verdictKindFor,
 } from "../core/verdict";
 import { minutesBetween } from "../testing/clock";
+import { normalizePath } from "../core/paths";
 import type { Ctx } from "./ctx";
 
 /* ------------------------------------------------------------------ */
@@ -38,6 +39,21 @@ import type { Ctx } from "./ctx";
 /** Trim a slug; drop leading/trailing slashes; keep case (provider-side). */
 export function normalizeSlug(slug: string): string {
   return slug.trim().replace(/^\/+|\/+$/g, "");
+}
+
+/**
+ * Split a paths block (MCP inputs: one path per line) into normalized
+ * paths; blank lines and "#" comments are ignored, duplicates removed.
+ */
+export function splitPathsBlock(paths: string): string[] {
+  const out: string[] = [];
+  for (const raw of paths.split("\n")) {
+    const line = raw.trim();
+    if (line === "" || line.startsWith("#")) continue;
+    const p = normalizePath(line);
+    if (p !== "" && !out.includes(p)) out.push(p);
+  }
+  return out;
 }
 
 /** Find-or-create the repo and return it with its zones (defaults seeded). */
@@ -175,6 +191,8 @@ export interface BuildVerdictArgs {
   locale?: Locale;
   /** Mark pending notices delivered (MCP/hook responses deliver once). */
   deliverNotices?: boolean;
+  /** False for read-only probes (check-zone): collisions are NOT persisted. */
+  persist?: boolean;
   freezeSuggestion?: { paths: number; zoneName?: string };
 }
 
@@ -204,7 +222,10 @@ export async function buildVerdict(ctx: Ctx, args: BuildVerdictArgs): Promise<Ve
   const infos: VerdictCollisionInfo[] = [];
 
   for (const draft of args.drafts) {
-    const collision = await ctx.stores.collisions.upsert(draft);
+    const collision =
+      args.persist === false
+        ? { ...draft, id: `probe-${draft.worksiteA}-${draft.worksiteB}-${draft.zoneId ?? ""}`, state: "open" as const, detectedAt: now }
+        : await ctx.stores.collisions.upsert(draft);
     const otherId =
       collision.worksiteA === args.subject.id ? collision.worksiteB : collision.worksiteA;
     const other = args.othersById.get(otherId);
@@ -253,6 +274,7 @@ export async function buildVerdict(ctx: Ctx, args: BuildVerdictArgs): Promise<Ve
       ),
       sameTicket: other.worksite.issueKey === args.subject.issueKey,
       samePilot: other.worksite.accountId === args.subject.accountId,
+      probable: collision.probable,
       hardDeny:
         args.hardMode &&
         collision.degree === 4 &&
