@@ -162,6 +162,39 @@ const PROJECT_READ_TOOLS = new Set([
 ]);
 
 /**
+ * Public proof of life: aggregate counters only (no ticket keys, no paths, no
+ * account ids) so the static demo site can show that the deployment is alive
+ * and busy. CORS is open for this route ONLY — every other route stays
+ * token-gated.
+ */
+export async function onProof(deps: WebtriggerDeps): Promise<WebtriggerHttpResponse> {
+  const ctx = await deps.buildCtx({});
+  const report = await deps.status(ctx);
+  const worksites = report.worksites.length;
+  const collisions = report.repos.reduce((n, r) => n + r.openCollisions, 0);
+  const reservations = report.repos.reduce((n, r) => n + r.activeReservations, 0);
+  const body = JSON.stringify({
+    ok: true,
+    generatedAt: report.generatedAt,
+    repositories: report.repos.length,
+    worksites,
+    collisions,
+    reservations,
+    events: report.recentEvents.length,
+    lastEvent: report.recentEvents[0]?.kind ?? null,
+  });
+  return {
+    statusCode: 200,
+    headers: {
+      ...JSON_HEADERS,
+      "Access-Control-Allow-Origin": ["*"],
+      "Cache-Control": ["no-store"],
+    },
+    body,
+  };
+}
+
+/**
  * Generic tool call over HTTP: the same handlers as the MCP tools, reached
  * with a Bearer token instead of the platform's OAuth. This is what the local
  * MCP bridge (templates/mcp-bridge) and the agent fleets use: identity comes

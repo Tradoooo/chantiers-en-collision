@@ -52,6 +52,7 @@ import { MCP_TOOLS } from "./resolvers-mcp";
 import {
   ctxOptions,
   emptyResponse,
+  onProof,
   onTool,
   header,
   jsonResponse,
@@ -63,6 +64,7 @@ import {
 } from "./webtrigger-admin";
 
 export type WebtriggerRoute =
+  | "proof"
   | "open"
   | "touch"
   | "close"
@@ -126,6 +128,7 @@ const ROUTE_SUFFIXES: [string, WebtriggerRoute][] = [
   ["/ci/footprint", "ci-footprint"],
   ["/ci/conflict", "ci-conflict"],
   ["/status", "status"],
+  ["/proof", "proof"],
   ["/tool", "tool"],
   ["/bootstrap", "bootstrap"],
   ["/open", "open"],
@@ -318,6 +321,8 @@ export async function routeWebtrigger(
   try {
     const route = routeOf(request.path);
     if (route === undefined) return emptyResponse();
+    // Public proof of life (aggregate counters only, no identifiers).
+    if (route === "proof") return await onProof(deps);
     // Bootstrap is gated by a deployment variable, not by a token: it is the
     // route that MINTS the first tokens. Dead (empty 200) unless
     // BOOTSTRAP_SECRET is set — and the operator removes it right after.
