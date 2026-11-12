@@ -134,8 +134,16 @@ async function liveState(): Promise<{
   }
 }
 
+/** The verdict classes the stylesheet knows about (the live one is real). */
+const VERDICT_KINDS = ["free", "caution", "wait", "stop"] as const;
+
 function liveVerdictCard(v: LiveVerdict): HTMLElement {
-  const card = el("div", "card verdict verdict-caution live-card");
+  // The card is painted with the verdict the DEPLOYMENT really returned
+  // (free / caution / wait / stop) — not a hard-coded colour.
+  const kind = VERDICT_KINDS.includes(v.verdict as (typeof VERDICT_KINDS)[number])
+    ? (v.verdict as (typeof VERDICT_KINDS)[number])
+    : "caution";
+  const card = el("div", `card verdict verdict-${kind} live-card`);
   card.appendChild(el("h3", undefined, "PROJ-101 · agent of Karim"));
   card.appendChild(el("span", "chip chip-live", "LIVE · deployment"));
   for (const c of v.collisions.slice(0, 6)) {

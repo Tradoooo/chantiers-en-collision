@@ -141,20 +141,43 @@ this, Path 2 in `docs/JUDGES.md` returns a module-not-available error.
 > Placeholder: the exact form URL is not captured in this repo yet — record it
 > here when you fill it in, so the next deployer has it.
 
-### Enable external MCP publication
+### The remote MCP server is published — how a client connects
 
-Even after the EAP flag is on, a **site admin** must allow the app to be reached
-by external MCP clients (Rovo MCP is served over OAuth 2.1):
+Verified on **2026-11-12**: Atlassian's remote MCP gateway already publishes this
+app's MCP server. There is nothing to click to publish it; what a client needs
+is an OAuth 2.1 token.
 
-1. Open **admin.atlassian.com** → select your site.
-2. Go to **Apps** → **Connected apps**.
-3. Find **Chantiers en collision** → open it.
-4. Enable **Rovo MCP / external access** (the exact label per the Atlassian
-   "Rovo MCP" doc). Once on, external clients can reach the `chantiers-mcp` server
-   listed in `manifest.yml`.
+| What | Value |
+|---|---|
+| Endpoint | `https://mcp.atlassian.com/forge/2ef208cc-6621-42a7-8557-5ce5ab3f6882` |
+| Protected-resource metadata | `https://mcp.atlassian.com/.well-known/oauth-protected-resource/forge/2ef208cc-6621-42a7-8557-5ce5ab3f6882` |
+| Authorization server (per app) | `https://auth.atlassian.com/VCeDsk8ZHncYF1g234fKtc4lNipbBhu3` |
+| Client registration (DCR) | `…/dcr/register` on that server — external clients register themselves |
+| Token endpoint | `https://auth.atlassian.com/oauth/token` (`authorization_code` + PKCE S256) |
 
-> The in-product path quoted in `docs/JUDGES.md` ("Jira admin → apps → Chantiers
-> en collision → Rovo MCP / external access") refers to this same toggle.
+An external client (Claude Code, Cursor, …) then:
+
+1. registers itself dynamically on the DCR endpoint (public client + PKCE);
+2. opens `https://auth.atlassian.com/authorize` — **the human consents once**;
+3. exchanges the code, and calls `tools/list` / `tools/call` on the endpoint.
+
+Health probe without a token — this is the *healthy* answer, not a failure:
+
+```bash
+curl -s -X POST "$MCP" -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+# → 401 {"error":"invalid_token"}
+#    www-authenticate: Bearer resource_metadata="https://mcp.atlassian.com/.well-known/oauth-protected-resource/forge/…"
+```
+
+If a client gets `404` or "module not available" instead, the app is not in the
+**Rovo MCP Server (Preview) EAP**: fill the form (developer.atlassian.com, search
+"Rovo MCP Server (Preview) EAP"). The `client_credentials` grant is refused by
+this authorization server (`invalid_client`) — the consent of a human is required,
+which is why the proof of the external path lives in the judge's hands.
+
+The **no-OAuth** path for a fleet of agents stays the local stdio bridge
+([`docs/MCP-BRIDGE.md`](MCP-BRIDGE.md)): same 16 tools, no browser, no consent.
 
 ### Generate the tokens
 

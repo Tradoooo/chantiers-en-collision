@@ -44,12 +44,14 @@
 | [`docs/PROTOCOL.md`](PROTOCOL.md) | agent authors | the agent protocol: declare, read the verdict, notify, close |
 | [`docs/VIDEO-SCRIPT.md`](VIDEO-SCRIPT.md) | video editor | the storyboard of the submission screencast (< 5 min, EN) |
 | [`docs/CONSOLIDATION.md`](CONSOLIDATION.md) | the team | the consolidation plan: what comes first, and why |
+| [`docs/CONSOLIDATION-V2.md`](CONSOLIDATION-V2.md) | the team | consolidation, wave 2: the 10 next moves after wave 1 landed |
 
 ## Sub-folders
 
 | Path | Contents |
 |---|---|
 | `docs/consolidation/` | the 999 consolidation ideas, the TSV dataset, the stats |
+| `docs/consolidation/data/v2/` | wave 2: 100 more consolidation ideas (TSV, shortlist, stats) |
 | `docs/consolidation/IDEES-1000-{1,2,3}.md` | the raw ideas, grouped by family |
 
 ## House rule

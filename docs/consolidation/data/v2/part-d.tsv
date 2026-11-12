@@ -1,0 +1,21 @@
+id	famille	type	titre	surface	impact	effort_jours	risque	description
+V2-D-001	forge-ops	unify	Un seul client webtrigger Python partagé	ops	5	2	low	prove.py, smoke-e2e.sh et le bridge MCP réimplémentent chacun le POST /open /touch ./etc : une fonction wt() unique réutilisée partout.
+V2-D-002	forge-ops	unify	Une seule source des URLs de déploiement	ops	4	1	low	WEBTRIGGER, MCP_ENDPOINT et SITE sont en dur dans prove.py ET la doc : un fichier config (ou env) lu par les deux.
+V2-D-003	forge-ops	unify	Un chargeur de secrets unique	ops	4	1	low	.tokens/personal.json, .tokens/project.json, ~/.atlassian-* sont relus à plusieurs endroits : un module tokens unique avec surcharge d'environnement.
+V2-D-004	forge-ops	merge	Fusionner hermes-lite.yml et hermes-lite-alert.yml	ci	3	1	low	Deux workflows jumeaux (alert + notif) : un seul workflow paramétré par input, un fichier de moins à surveiller.
+V2-D-005	forge-ops	unify	une seule étape npm-cache partagée	ci	3	1	low	.github/actions/npm-cache est dupliqué entre jobs : le workflow appelle verify --only, le cache reste, mais une seule définition yaml d'action.
+V2-D-006	forge-ops	document	Échéance de migration UI Kit 1	docs	3	0.5	low	Le deploy avertit « UI Kit 1 déprécié » : acter la migration @forge/react dans docs/IDEAS.md avec une date, pour ne plus la re-découvrir.
+V2-D-007	forge-ops	guard	Garde-fou d'URL post-transfert	ci	4	0.5	low	Après le transfert Tradoooo, un test grep refuse toute URL baptistefaisy.github.io (README, docs, site, scripts) pour éviter la 404.
+V2-D-008	forge-ops	unify	Le compte « 16 outils » lu depuis tool-catalog	code	4	1	low	prove.py P7 compte 16 en dur : lire src/glue/tool-catalog.ts pour que la preuve ait toujours le vrai nombre.
+V2-D-009	forge-ops	unify	Générer les gabarits CI depuis un seul template	code	4	2	med	templates/ci (GitHub/GitLab/Bitbucket) recopient la même étape : un template source unique (src/glue/templates.ts existe déjà) et les 3 variantes générées.
+V2-D-010	forge-ops	simplify	Un seul script de déploiement du site	ops	3	1	low	deploy-site.sh est unique, mais ses chemins (gh-pages, dist) sont re-décrits dans docs/DEPLOY.md : un runbook qui pointe le script.
+V2-D-011	forge-ops	unify	Une seule matrice « qui parle à quoi »	docs	4	2	low	webtrigger / MCP / routes démo / hook : un tableau unique (docs/ARCHITECTURE.md) liste les 4 surfaces et leur contrat, au lieu de 4 docs.
+V2-D-012	forge-ops	delete	Retirer les variables d'app inutilisées	ops	3	1	low	Auditer forge-atlassian variables list : supprimer les variables mortes (BOOTSTRAP_* désarmé) pour un environnement net.
+V2-D-013	forge-ops	guard	Sanity-check des routes démo en CI	ci	4	1	low	Un job rejoue /demo/state et /demo/verdict contre le déploiement après chaque release, dans smoke-e2e.yml (étendu).
+V2-D-014	forge-ops	unify	Un seul point de configuration des scopes Jira	ops	3	1	med	Les scopes demandés par manifest.yml et ceux listés dans DEPLOY.md divergent : un fichier scopes unique réconcilié avec forge lint.
+V2-D-015	forge-ops	merge	Fusionner smoke-e2e.yml et prove.py	ops	3	3	med	Les deux rejouent les mêmes appels au déploiement : la CI appelle prove.py (déjà reproductible) au lieu d'un shell séparé.
+V2-D-016	forge-ops	unify	Un seul répertoire .github/actions réutilisable	ci	3	1	low	Consolider les actions composites (npm-cache, set-up forge) pour que tous les workflows repo de la fleet les partagent.
+V2-D-017	forge-ops	document	Enregistrer l'URL du formulaire EAP MCP	docs	2	0.5	low	docs/DEPLOY.md garde un placeholder pour l'url du formulaire Rovo MCP EAP : la noter (ou dire qu'elle est inutile) pour le prochain déployeur.
+V2-D-018	forge-ops	guard	Vérifier que le site pointe le bon déploiement	ci	3	1	low	Un test relit site/demo et vérifie que l'URL de base du déploiement est une constante, pas une valeur éparse en dur.
+V2-D-019	forge-ops	unify	Un seul schéma de l'ordre des scripts	document	3	1	low	Un diagramme ascii dans scripts montre l'ordre verify→deploy→install→prove, pour que personne n'oublie install --upgrade.
+V2-D-020	forge-ops	delete	Supprimer les workflows obsolètes de la fleet	ci	3	1	med	S'il reste des workflows périmés (stale-base-guard ?), les désactiver s'ils ne surveillent plus rien d'actif.

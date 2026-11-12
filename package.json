@@ -17,7 +17,7 @@
     "verify": "node scripts/verify.mjs",
     "verify:live": "node scripts/verify.mjs --live",
     "build": "tsc -p tsconfig.json --outDir dist",
-    "build:site": "esbuild site/demo/main.ts --bundle --format=iife --global-name=Chantiers --alias:node:crypto=./site/demo/crypto-stub.ts --minify --outfile=site/dist/demo.js && cp site/index.html site/styles.css site/dist/",
+    "build:site": "esbuild site/demo/main.ts --bundle --format=iife --global-name=Chantiers --alias:node:crypto=./site/demo/crypto-stub.ts --minify --outfile=site/dist/demo.js && cp site/index.html site/styles.css site/dist/ && cp -r site/assets site/dist/",
     "check:site": "npm run build:site && node scripts/check-site-bundle.mjs",
     "deploy:site": "bash scripts/deploy-site.sh"
   },

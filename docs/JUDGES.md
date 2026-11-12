@@ -94,10 +94,12 @@ answers from the six read-only tools; it never declares anything on your behalf.
 
 ## Path 2 — With an external MCP client
 
-Rovo MCP is a Preview module served over **OAuth 2.1**; a site admin must first enable external
-access for the app (Jira admin → apps → Chantiers en collision → *Rovo MCP / external access*).
-Then connect your MCP client (Claude Desktop, Claude Code, Rovo Chat, any MCP-capable client) to
-the `chantiers-mcp` server and call the tools directly.
+Rovo MCP is a Preview module served over **OAuth 2.1**. The server is published at
+`https://mcp.atlassian.com/forge/2ef208cc-6621-42a7-8557-5ce5ab3f6882` (an unauthenticated
+`initialize` answers `401 invalid_token` — the healthy challenge). Connect any MCP client
+(Claude Desktop, Claude Code, Cursor, Rovo Chat) to that URL: it registers itself (DCR),
+you consent once (OAuth), then call the tools. The connection details are in
+[`docs/DEPLOY.md`](DEPLOY.md#the-remote-mcp-server-is-published--how-a-client-connects).
 
 **2.1 First declaration** — `declare-footprint`:
 

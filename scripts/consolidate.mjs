@@ -12,7 +12,6 @@ import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
-const DATA_DIR = join(ROOT, "docs/consolidation/data");
 const HEADER = ["id", "famille", "type", "titre", "surface", "impact", "effort_jours", "risque", "description"];
 
 const TYPE_WEIGHT = {
@@ -25,6 +24,16 @@ const STOP_WORDS = new Set(["de", "des", "du", "la", "le", "les", "un", "une", "
 const topN = (() => {
   const i = process.argv.indexOf("--top");
   return i > 0 ? Number(process.argv[i + 1]) : 60;
+})();
+
+// The wave-2 ideas live in their own folder: --dir <dir> --out <dir>.
+const dirArg = (() => {
+  const i = process.argv.indexOf("--dir");
+  return i > 0 ? process.argv[i + 1] : "docs/consolidation/data";
+})();
+const outArg = (() => {
+  const i = process.argv.indexOf("--out");
+  return i > 0 ? process.argv[i + 1] : dirArg;
 })();
 
 function parseTsv(text, file) {
@@ -42,12 +51,12 @@ function parseTsv(text, file) {
   return rows;
 }
 
-function loadAll() {
-  if (!existsSync(DATA_DIR)) throw new Error(`dossier absent: ${DATA_DIR}`);
-  const files = readdirSync(DATA_DIR).filter((f) => /^partie-\d+\.tsv$/.test(f)).sort();
+function loadAll(dataDir) {
+  if (!existsSync(dataDir)) throw new Error(`dossier absent: ${dataDir}`);
+  const files = readdirSync(dataDir).filter((f) => /^partie-\d+\.tsv$|^part-.*\.tsv$/.test(f)).sort();
   const rows = [];
   for (const f of files) {
-    const part = parseTsv(readFileSync(join(DATA_DIR, f), "utf8"), f);
+    const part = parseTsv(readFileSync(join(dataDir, f), "utf8"), f);
     console.log(`[lu] ${f}: ${part.length} idées`);
     rows.push(...part);
   }
@@ -118,13 +127,15 @@ function stats(rows) {
 }
 
 function main() {
-  const raw = loadAll();
+  const dataDir = join(ROOT, dirArg);
+  const outDir = join(ROOT, outArg);
+  const raw = loadAll(dataDir);
   const unique = dedupe(raw);
   for (const idea of unique) idea.score = score(idea);
   unique.sort((a, b) => b.score - a.score);
-  writeFileSync(join(DATA_DIR, "all.tsv"), tsv(unique));
-  writeFileSync(join(DATA_DIR, "shortlist.tsv"), tsv(unique.slice(0, topN)));
-  writeFileSync(join(DATA_DIR, "stats.md"), stats(unique));
+  writeFileSync(join(outDir, "all.tsv"), tsv(unique));
+  writeFileSync(join(outDir, "shortlist.tsv"), tsv(unique.slice(0, topN)));
+  writeFileSync(join(outDir, "stats.md"), stats(unique));
   console.log(`\n[total] ${raw.length} brutes → ${unique.length} uniques (${raw.length - unique.length} doublons)`);
   console.log(`[shortlist] ${Math.min(topN, unique.length)} idées écrite dans shortlist.tsv`);
 }
