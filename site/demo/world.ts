@@ -14,6 +14,7 @@
 import type { Identity, MergedTicketHistory, TicketMeta, Worksite } from "../../src/core/types";
 import type { Ctx, JiraPort } from "../../src/services/ctx";
 import type { Stores } from "../../src/storage/interfaces";
+import { declareFootprint } from "../../src/services/declare";
 import { createMemoryStores } from "../../src/storage/memory";
 import { makeClock, type TestClock } from "../../src/testing/clock";
 
@@ -140,7 +141,8 @@ async function seedWorksite(
   return w;
 }
 
-async function seedWorld(world: DemoWorld): Promise<void> {
+/** Repo, default zone catalog, one team zone, passage rules. */
+async function seedRepoAndRules(world: DemoWorld): Promise<string> {
   const repo = await world.stores.repos.ensure(PROJECT_ID, REPO_SLUG, "main");
   await world.stores.zones.seedDefaults(repo.id);
   // One team zone: shows that a team zone competes with the default catalog.
@@ -158,19 +160,22 @@ async function seedWorld(world: DemoWorld): Promise<void> {
     hardMode: false,
     dormancyHours: 24,
   });
+  return repo.id;
+}
 
-  // Open worksites: Léa's agent 3 renumbers migrations, agent 1 touches the
-  // invoice file, Karim works on the auth side, agent 4 wants a migration too.
+/** The live story: four worksites, a notice, a reservation, one D4 pair. */
+async function seedLiveStory(world: DemoWorld, repoId: string): Promise<void> {
+  // Léa's agent 3 renumbers migrations, agent 1 touches the invoice file,
+  // Karim works on the auth side, agent 4 wants a migration too.
   const mig = await seedWorksite(world, "a3", "PROJ-93", ["db/migrations/0101_renumber.sql"]);
   await seedWorksite(world, "a1", "PROJ-88", ["src/billing/invoice.ts"]);
   await seedWorksite(world, "karim", "PROJ-97", ["src/auth/login.ts"]);
   await seedWorksite(world, "a4", "PROJ-95", ["db/migrations/0102_index.sql"]);
 
-  // A pending notice from PROJ-88 to the worksite holding the lock.
   await world.stores.notices.post(
     {
       worksiteId: mig.id,
-      repoId: repo.id,
+      repoId,
       authorAccountId: "lea@example.com",
       issueKey: "PROJ-88",
       paths: ["db/migrations"],
@@ -179,23 +184,33 @@ async function seedWorld(world: DemoWorld): Promise<void> {
     },
     [mig.id],
   );
-
-  // An active reservation on the migrations resource (expires at 11:00).
   await world.stores.reservations.create({
     worksiteId: mig.id,
-    repoId: repo.id,
+    repoId,
     patterns: ["db/migrations"],
     hard: false,
     reason: "renumbering migrations in one go",
     createdAt: world.clock.now(),
     expiresAt: "2026-11-12T11:00:00.000Z",
   });
+  // Materialise the collisions: detection runs at declaration time, so
+  // PROJ-95 re-declares through the real service and its D4 with PROJ-93
+  // (exclusive migrations) lands in the store — map, panel and stats read it.
+  await declareFootprint(world.ctx("a4"), {
+    issueKey: "PROJ-95",
+    repoSlug: REPO_SLUG,
+    paths: "db/migrations/0102_index.sql",
+    session: "a4",
+  });
+}
 
-  // Merged worksite + its prediction + its attested footprint → accuracy.
+/** The past: one merged worksite with prediction (accuracy) and real
+ *  conflicts in a legacy folder (the learning loop proposes "exclusive"). */
+async function seedHistory(world: DemoWorld, repoId: string): Promise<void> {
   await seedWorksite(world, "dev", "PROJ-70", ["src/billing/invoice.ts", "src/billing/tax.ts"], "closed", "merged");
   await world.stores.predictions.save({
     issueKey: "PROJ-70",
-    repoId: repo.id,
+    repoId,
     entries: [
       { path: "src/billing/invoice.ts", kind: "file", confidence: 0.8 },
       { path: "src/billing/service.ts", kind: "file", confidence: 0.5 },
@@ -204,11 +219,9 @@ async function seedWorld(world: DemoWorld): Promise<void> {
     basis: { componentMatch: true, referenceTickets: ["PROJ-60", "PROJ-62"] },
     computedAt: world.clock.now(),
   });
-
-  // Real conflicts in a legacy folder → the learning loop proposes "exclusive".
   for (const p of ["src/legacy-db/schema.sql", "src/legacy-db/seed.sql"]) {
     await world.stores.conflicts.report({
-      repoId: repo.id,
+      repoId,
       issueKeyA: "PROJ-93",
       issueKeyB: "PROJ-95",
       paths: [p],
@@ -218,9 +231,42 @@ async function seedWorld(world: DemoWorld): Promise<void> {
   }
 }
 
+async function seedWorld(world: DemoWorld): Promise<void> {
+  const repoId = await seedRepoAndRules(world);
+  await seedLiveStory(world, repoId);
+  await seedHistory(world, repoId);
+}
+
 /* ------------------------------------------------------------------ */
 /* World                                                               */
 /* ------------------------------------------------------------------ */
+
+const DEMO_JIRA: JiraPort = {
+  searchIssues: async () => DEMO_TICKETS,
+  getIssue: async (issueKey: string) => DEMO_TICKETS.find((t) => t.issueKey === issueKey),
+  mergedHistory: async () => DEMO_HISTORY,
+};
+
+function ctxFor(
+  stores: Stores,
+  clock: TestClock,
+  actorRef: string,
+): Ctx {
+  const actor = ACTORS.find((a) => a.ref === actorRef) ?? ACTORS[0]!;
+  const identity: Identity = {
+    accountId: actor.accountId,
+    kind: actor.kind,
+    client: actor.client,
+    sessionRef: actor.sessionRef,
+  };
+  return {
+    stores,
+    now: () => clock.now(),
+    identity,
+    projectId: PROJECT_ID,
+    jira: DEMO_JIRA,
+  };
+}
 
 export function createWorld(): DemoWorld {
   let stores: Stores = createMemoryStores();
@@ -236,27 +282,8 @@ export function createWorld(): DemoWorld {
       return clock;
     },
     repoSlug: REPO_SLUG,
-    jira: {
-      searchIssues: async () => DEMO_TICKETS,
-      getIssue: async (issueKey: string) => DEMO_TICKETS.find((t) => t.issueKey === issueKey),
-      mergedHistory: async () => DEMO_HISTORY,
-    },
-    ctx(actorRef: string): Ctx {
-      const actor = ACTORS.find((a) => a.ref === actorRef) ?? ACTORS[0]!;
-      const identity: Identity = {
-        accountId: actor.accountId,
-        kind: actor.kind,
-        client: actor.client,
-        sessionRef: actor.sessionRef,
-      };
-      return {
-        stores,
-        now: () => clock.now(),
-        identity,
-        projectId: PROJECT_ID,
-        jira: world.jira,
-      };
-    },
+    jira: DEMO_JIRA,
+    ctx: (actorRef: string) => ctxFor(stores, clock, actorRef),
     repoId: () => repoIdValue,
     async seed(): Promise<void> {
       // The repo id must exist BEFORE the worksites are seeded (they carry it).
