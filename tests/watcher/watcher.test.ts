@@ -162,12 +162,12 @@ describe("chantier-watch (universal watcher)", () => {
     try {
       const child = spawnWatch(repo, cap.url, "c-session");
       const out = collectOutput(child);
-      await waitFor(() => cap.requests.some((r) => r.route.endsWith("/open")), 4000);
+      await waitFor(() => cap.requests.some((r) => r.route.endsWith("/open")), 15000);
 
       const target = join(repo, "edit.txt");
       writeFileSync(target, "one\n");
       writeFileSync(target, "two\n");
-      await waitFor(() => cap.requests.some((r) => r.route.endsWith("/touch")), 4000);
+      await waitFor(() => cap.requests.some((r) => r.route.endsWith("/touch")), 15000);
       await stop(child);
 
       const open = cap.requests.find((r) => r.route.endsWith("/open"));

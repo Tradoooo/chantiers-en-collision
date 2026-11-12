@@ -8,5 +8,11 @@ export default defineConfig({
     // CPU contention on the shared self-hosted runners (r630), where a
     // 15 s default produced a flake. The CI job budget (5 min) is unchanged.
     testTimeout: 30000,
+    // r630 is shared (100+ runners, k3s, agents): cap the fork pool so the
+    // vitest workers never exhaust the machine ("Failed to start forks
+    // worker" flakes). 2 forks still run the suite in ~40 s.
+    poolOptions: {
+      forks: { maxForks: 2, minForks: 1 },
+    },
   },
 });
