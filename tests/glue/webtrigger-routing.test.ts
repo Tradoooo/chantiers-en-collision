@@ -91,7 +91,9 @@ function makeSpies(token: HookToken | undefined = PERSONAL_TOKEN): Spies {
     scope: "personal" as const,
   }));
   const ensureRepo = vi.fn(async () => ({}));
+  const tools = vi.fn(async () => ({ tool: "x", text: "ok" }));
   const deps: WebtriggerDeps = {
+    tools: { "declare-footprint": tools } as never,
     buildCtx,
     verifyToken,
     hookOpen,

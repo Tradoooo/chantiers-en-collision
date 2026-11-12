@@ -48,9 +48,11 @@ import { createToken as createTokenService, verifyToken as verifyTokenService } 
 import type { CreatedToken } from "../services/tokens";
 import { resolveRepo } from "../services/shared";
 import { deploymentStatus, type StatusReport } from "./status";
+import { MCP_TOOLS } from "./resolvers-mcp";
 import {
   ctxOptions,
   emptyResponse,
+  onTool,
   header,
   jsonResponse,
   onBootstrap,
@@ -67,7 +69,8 @@ export type WebtriggerRoute =
   | "ci-footprint"
   | "ci-conflict"
   | "status"
-  | "bootstrap";
+  | "bootstrap"
+  | "tool";
 
 /** What Forge hands to a `urlFormat: v2` + `response: {type: dynamic}` trigger. */
 export interface WebtriggerRequest {
@@ -98,6 +101,8 @@ export interface WebtriggerDeps {
     input: { issueKey: string; repoSlug: string; paths: string; withIssueKey?: string },
   ): Promise<RealConflict>;
   status(ctx: Ctx): Promise<StatusReport>;
+  /** The MCP tool registry (same handlers as the MCP tools of manifest.yml). */
+  tools: Record<string, (request: { payload: Record<string, unknown>; context?: { accountId?: string } }) => Promise<Record<string, unknown>>>;
   createToken(ctx: Ctx, scope: "personal" | "project"): Promise<CreatedToken>;
   ensureRepo(ctx: Ctx, slug: string): Promise<unknown>;
 }
@@ -112,6 +117,7 @@ export const LIVE_DEPS: WebtriggerDeps = {
   ciFootprint: ciFootprintService,
   reportConflict: reportConflictService,
   status: deploymentStatus,
+  tools: MCP_TOOLS,
   createToken: createTokenService,
   ensureRepo: (ctx, slug) => resolveRepo(ctx, slug),
 };
@@ -120,6 +126,7 @@ const ROUTE_SUFFIXES: [string, WebtriggerRoute][] = [
   ["/ci/footprint", "ci-footprint"],
   ["/ci/conflict", "ci-conflict"],
   ["/status", "status"],
+  ["/tool", "tool"],
   ["/bootstrap", "bootstrap"],
   ["/open", "open"],
   ["/touch", "touch"],
@@ -181,7 +188,13 @@ export function bearerOf(headers: WebtriggerRequest["headers"]): string | undefi
 /** A project token may only send attested footprints, conflicts and status. */
 export function tokenAllows(route: WebtriggerRoute, token: HookToken): boolean {
   if (token.scope !== "project") return true;
-  return route === "ci-footprint" || route === "ci-conflict" || route === "status";
+  // On /tool the scope is enforced PER TOOL (read-only for project tokens).
+  return (
+    route === "ci-footprint" ||
+    route === "ci-conflict" ||
+    route === "status" ||
+    route === "tool"
+  );
 }
 
 
@@ -339,6 +352,7 @@ async function dispatch(
   if (route === "open") return await onOpen(body, token, deps, repoSlug);
   if (route === "close") return await onClose(body, token, deps);
   if (route === "status") return await onStatus(token, deps);
+  if (route === "tool") return await onTool(body, token, deps);
   if (route === "ci-footprint") return await onCiFootprint(body, token, deps);
   return await onCiConflict(body, token, deps);
 }

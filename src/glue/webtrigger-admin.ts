@@ -146,3 +146,48 @@ export function ctxOptions(
 export function emptyResponse(): WebtriggerHttpResponse {
   return { statusCode: 200, body: "" };
 }
+
+/** Tools a project token may call: read-only, no state change. */
+const PROJECT_READ_TOOLS = new Set([
+  "check-zone",
+  "who-touches",
+  "get-worksite",
+  "predict-footprint",
+  "list-collisions",
+  "list-clear-work",
+  "next-clear-ticket",
+  "plan-parallel-work",
+  "measure-parallel-width",
+  "status",
+]);
+
+/**
+ * Generic tool call over HTTP: the same handlers as the MCP tools, reached
+ * with a Bearer token instead of the platform's OAuth. This is what the local
+ * MCP bridge (templates/mcp-bridge) and the agent fleets use: identity comes
+ * from the token, never from the payload.
+ */
+export async function onTool(
+  body: Record<string, unknown>,
+  token: HookToken,
+  deps: WebtriggerDeps,
+): Promise<WebtriggerHttpResponse> {
+  const tool = text(body.tool);
+  if (tool === undefined) return jsonResponse({ error: "missing tool" }, 400);
+  if (token.scope === "project" && !PROJECT_READ_TOOLS.has(tool)) {
+    return jsonResponse({ error: `a project token may not call ${tool}` }, 403);
+  }
+  try {
+    const handler = deps.tools[tool];
+    if (handler === undefined) return jsonResponse({ error: `unknown tool ${tool}` }, 404);
+    const payload = rec(body.payload);
+    const result = await handler({
+      payload,
+      context: { accountId: token.accountId },
+    });
+    return jsonResponse(result);
+  } catch (e) {
+    console.error(`tool ${tool} failed`, e);
+    return jsonResponse({ error: (e as Error).message }, 500);
+  }
+}
