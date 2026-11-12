@@ -173,6 +173,7 @@ export async function onTool(
   deps: WebtriggerDeps,
 ): Promise<WebtriggerHttpResponse> {
   const tool = text(body.tool);
+  console.log("chantiers /tool call", tool ?? "(missing)", "scope", token.scope);
   if (tool === undefined) return jsonResponse({ error: "missing tool" }, 400);
   if (token.scope === "project" && !PROJECT_READ_TOOLS.has(tool)) {
     return jsonResponse({ error: `a project token may not call ${tool}` }, 403);
