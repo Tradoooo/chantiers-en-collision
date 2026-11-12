@@ -9,7 +9,7 @@
 # `forge create` (never commit a real secret here).
 
 app:
-  id: ari:cloud:ecosystem::app/11111111-2222-3333-4444-555555555555
+  id: ari:cloud:ecosystem::app/2ef208cc-6621-42a7-8557-5ce5ab3f6882
   runtime:
     name: nodejs22.x
 
@@ -36,10 +36,26 @@ modules:
         - resolve-collision
         - close-worksite
         - report-conflict
+        - create-hook-token
 
   # One action per MCP tool (spec §15). Inputs are simple values only:
   # `paths` is a string with one path per line; `mode` is edit/create/delete/rename.
   action:
+    - key: create-hook-token
+      name: Create hook token
+      function: createHookToken
+      actionVerb: CREATE
+      description: |
+        Create a personal (or project) hook token for the web trigger and the
+        CI step. The clear token is returned ONCE — store it as CHANTIER_TOKEN.
+        Until the personal-settings screen ships as Custom UI, this is how
+        agents and pipelines get their token.
+      inputs:
+        scope:
+          title: Scope
+          type: string
+          required: false
+          description: "personal (default) or project (project tokens may only send CI footprints and conflicts)"
     - key: declare-footprint
       name: Declare footprint
       function: declareFootprint
@@ -213,7 +229,7 @@ modules:
           description: "Number of parallel agents or developers"
     - key: measure-parallel-width
       name: Measure parallel width
-      function: measureParallelWidthTool
+      function: measureParallelWidth
       actionVerb: GET
       description: |
         How many agents or developers this repository supports AT ONCE:
@@ -384,9 +400,10 @@ modules:
   # (`@forge/react`) and would require a static resource bundle this app has
   # not got. `render: native:<key>` (the previous draft) is not a documented
   # value at all — `render` only ever takes the literal `native`.
-  # NOTE: `forge lint` could not arbitrate — the `forge` binary on this machine
-  # is Foundry's Solidity toolchain (1.9.0, "Lint Solidity source files"), it
-  # answers "nothing to lint" here. See the workstream I report.
+  # NOTE: validated with the REAL Forge CLI (`forge-atlassian` 15.1.0 — the
+  # global `forge` binary on this machine is Foundry/Solidity). Sprint action
+  # and personal settings are Custom-UI-only modules in 2026: parked until the
+  # @forge/react migration (docs/IDEAS.md).
   jira:issuePanel:
     - key: worksite-panel
       title: Worksite
@@ -397,18 +414,18 @@ modules:
     - key: worksite-map
       title: Worksite map
       function: main
-  jira:sprintAction:
-    - key: sprint-check
-      title: Check collisions
-      function: main
+  # jira:sprintAction — retiré du premier déploiement : forge lint 15.1.0
+  # exige `resource:` (Custom UI @forge/react) et interdit `function:` pour ce
+  # module. L'écran existe (src/ui/sprintCheck.tsx) ; la migration Custom UI
+  # est en backlog (docs/IDEAS.md). La vérification de sprint reste accessible
+  # via les outils MCP plan-parallel-work / list-collisions.
   jira:projectSettingsPage:
     - key: project-settings
       title: Worksites
       function: main
-  jira:personalSettingsPage:
-    - key: personal-settings
-      title: My worksites
-      function: main
+  # jira:personalSettingsPage — même contrainte Custom UI que sprintAction.
+  # Les jetons de hook sont délivrés par l'outil MCP `create-hook-token`
+  # (shown once) en attendant la migration de l'écran (src/ui/personalSettings.tsx).
   jira:dashboardGadget:
     - key: collision-stats
       # title, description and thumbnail are all required by this module.
@@ -438,6 +455,7 @@ modules:
       operators:
         - in
         - "not in"
+      arguments: []
     - key: collides-with
       name: collidesWith
       function: jqlCollidesWith
@@ -477,7 +495,7 @@ modules:
   # module per app, `engine: mysql` is the only supported value. The DDL lives
   # in src/storage/schema.ts and is applied idempotently on every cold start.
   sql:
-    - key: main
+    - key: main-sql
       engine: mysql
 
   # ------------------------------------------------------------- Rovo agent & skill
@@ -510,6 +528,8 @@ modules:
         - list-clear-work
         - next-clear-ticket
         - plan-parallel-work
+        - measure-parallel-width
+        - create-hook-token
       skills:
         - avoid-collisions
 
@@ -547,8 +567,8 @@ modules:
       handler: index.nextClearTicketTool
     - key: planParallelWork
       handler: index.planParallelWork
-    - key: measureParallelWidthTool
-      handler: index.measureParallelWidthTool
+    - key: measureParallelWidth
+      handler: index.measureParallelWidth
     - key: reserveZone
       handler: index.reserveZone
     - key: postNotice
@@ -559,6 +579,8 @@ modules:
       handler: index.closeWorksiteTool
     - key: reportConflict
       handler: index.reportConflict
+    - key: createHookToken
+      handler: index.createHookToken
     - key: handleIngest
       handler: index.handleIngest
     - key: issueEvents

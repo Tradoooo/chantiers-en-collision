@@ -19,6 +19,7 @@ import { checkZone, declareFootprint } from "../services/declare";
 import { reportConflict } from "../services/ingest";
 import { listClearWork, listCollisions, nextClearTicket, planParallelWork } from "../services/planning";
 import { measureParallelWidth } from "../services/width";
+import { createToken } from "../services/tokens";
 import { postNotice } from "../services/notices";
 import { reserveZone } from "../services/reservations";
 import { resolveCollision } from "../services/resolve";
@@ -88,6 +89,23 @@ function verdictResult(tool: string, verdict: Verdict): ToolResult {
 /* ------------------------------------------------------------------ */
 /* The 13 tools                                                         */
 /* ------------------------------------------------------------------ */
+
+export async function createHookTokenTool(request: ToolRequest): Promise<ToolResult> {
+  const payload = payloadOf(request);
+  const scope = oneOf(payload, "scope", ["personal", "project"] as const) ?? "personal";
+  const ctx = await toolCtx(request, {});
+  const created = await createToken(ctx, scope);
+  return {
+    tool: "create-hook-token",
+    text: [
+      `Token ${created.scope} créé — affiché UNE SEULE FOIS / shown ONCE:`,
+      created.token,
+      "Store it as CHANTIER_TOKEN (hook/watcher) or CHANTIER_PROJECT_TOKEN (CI).",
+    ].join("\n"),
+    token: created.token,
+    scope: created.scope,
+  };
+}
 
 export async function declareFootprintTool(request: ToolRequest): Promise<ToolResult> {
   const payload = payloadOf(request);
@@ -406,9 +424,11 @@ export const MCP_TOOLS: Record<string, ToolHandler> = {
   closeWorksiteTool: closeWorksiteTool,
   "report-conflict": reportConflictTool,
   reportConflict: reportConflictTool,
+  "create-hook-token": createHookTokenTool,
+  createHookToken: createHookTokenTool,
 };
 
-/** The 15 tool keys of manifest.yml (`modules.rovo:mcp[0].tools`). */
+/** The 16 tool keys of manifest.yml (`modules.rovo:mcp[0].tools`). */
 export const MCP_TOOL_KEYS = [
   "declare-footprint",
   "check-zone",
@@ -425,4 +445,5 @@ export const MCP_TOOL_KEYS = [
   "resolve-collision",
   "close-worksite",
   "report-conflict",
+  "create-hook-token",
 ];

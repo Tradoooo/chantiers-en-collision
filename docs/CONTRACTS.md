@@ -100,7 +100,7 @@ Read this fully before writing a line. The product spec is `docs/SPEC.md`
 
 ## Manifest & glue
 
-- 15 MCP tools = 15 `action` entries = resolver keys wired in `src/index.ts`
+- 16 MCP tools = 16 `action` entries = resolver keys wired in `src/index.ts`
   via `@forge/resolver` (`new Resolver()` default export, `.define(key, fn)`,
   `export const handler = resolver.toHandler()` — check the installed d.ts).
 - Web trigger `ingest` receives the RAW client hook event; routes by URL

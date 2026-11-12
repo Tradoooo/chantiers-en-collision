@@ -103,7 +103,7 @@ CLI is a global/one-shot tool, and `npm run verify` must stay runnable without i
 
 | Path | Contents |
 |---|---|
-| `manifest.yml` | Forge modules: `rovo:mcp` (15 tools), 15 `action` entries, the `ingest` web trigger, 7 Jira UI modules, 2 JQL functions, triggers, the Rovo agent and skill, 20 functions. |
+| `manifest.yml` | Forge modules: `rovo:mcp` (16 tools), 16 `action` entries, the `ingest` web trigger, 7 Jira UI modules, 2 JQL functions, triggers, the Rovo agent and skill, 20 functions. |
 | `src/core/` | Pure logic, no Forge import: paths, zones, degrees, collisions, verdict, footprints, lifecycle, notices, prediction, priority, waves. |
 | `src/services/` | Orchestration over stores + `ctx` (identity, clock, Jira port): declare, worksites, notices, reservations, resolve, planning, ingest, maintenance, tokens. |
 | `src/storage/` | `schema.ts` (Forge SQL DDL), `forge/**` (SQL implementation), `memory/**` (tests + simulation). |
@@ -117,7 +117,7 @@ CLI is a global/one-shot tool, and `npm run verify` must stay runnable without i
 
 ## Architecture (short)
 
-One Forge app installed on Jira. Agents talk to it over **Rovo MCP** (15 tools); agent clients
+One Forge app installed on Jira. Agents talk to it over **Rovo MCP** (16 tools); agent clients
 and CI talk to it over one **web trigger** (`ingest`, routes `/open`, `/touch`, `/close`,
 `/ci/footprint`, `/ci/conflict`); humans talk to it through **Jira UI** modules and a **Rovo
 agent**. Everything is persisted in **Forge SQL** (14 tables, no foreign keys), and two scheduled
@@ -128,7 +128,7 @@ Full detail — step-by-step declaration, data model, footprint sources, zones, 
 behaviour, tokens, scheduled jobs, Forge SQL limits: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 The agent protocol itself: **[docs/PROTOCOL.md](docs/PROTOCOL.md)**.
 
-## The 15 MCP tools
+## The 16 MCP tools
 
 Exposed by the `chantiers-mcp` Rovo MCP server; each one maps to one `action` entry in
 `manifest.yml`. Verbs are Forge `actionVerb` values.
@@ -150,6 +150,7 @@ Exposed by the `chantiers-mcp` Rovo MCP server; each one maps to one `action` en
 | `resolve-collision` | UPDATE | Record how a collision is handled: wait, sequence, coordinate, split, merge, override. |
 | `close-worksite` | UPDATE | Close a worksite (merged / abandoned / done) and release the waiting neighbours. |
 | `report-conflict` | CREATE | Report a real merge/rebase conflict so the app learns whether it saw it coming. |
+| `create-hook-token` | CREATE | Create a personal or project hook token (shown once) — the entry pass for the hook, the watcher and the CI step. |
 
 Inputs are simple values only (Forge action limitation): `paths` is one string, **one path per
 line**; `mode` is `edit`, `create`, `delete` or `rename`. Identity never comes from an input — it
@@ -162,7 +163,7 @@ hackathon. 28 requirements in total.
 
 | Priority | Count | Highlights |
 |---|---|---|
-| **M** | 17 (CC-01…CC-17) | worksite lifecycle, declared footprint with a verdict under 2 s, D0–D4 detection, zones and the default catalogue, hook endpoint, per-session distinction, bounded reservations, notices delivered once, issue panel, the 15 MCP tools, `plan-parallel-work`, prediction, CI attested footprint, worksite map, simulation console, Rovo agent + skill, dormancy and auto-close. |
+| **M** | 17 (CC-01…CC-17) | worksite lifecycle, declared footprint with a verdict under 2 s, D0–D4 detection, zones and the default catalogue, hook endpoint, per-session distinction, bounded reservations, notices delivered once, issue panel, the 16 MCP tools, `plan-parallel-work`, prediction, CI attested footprint, worksite map, simulation console, Rovo agent + skill, dormancy and auto-close. |
 | **S** | 8 (CC-18…CC-25) | "Collisions" custom field + JQL functions, sprint check, configurable yield order and the *sequence* way out, hard mode (hook deny), Bitbucket companion app, sub-worksites for sub-agents, LLM-based prediction from ticket text, measured real conflicts and zone reclassification. |
 | **C** | 3 (CC-26…CC-28) | D5 broken contracts from declared symbols, cross-repository collisions, non-code worksites (Confluence pages, Jira config touched by Rovo agents). |
 

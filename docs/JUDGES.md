@@ -18,13 +18,13 @@ is why path 1 exists (spec §24).
 
 | Value | Where |
 |---|---|
-| Ingest base URL `https://<INSTALLATION>.webtrigger.atlassian.app/v2/<APP_ID>/ingest` | Jira → project settings → **Worksites** → *Hook & CI* tab (copy button). |
+| Ingest base URL `https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ` | Jira → project settings → **Worksites** → *Hook & CI* tab (copy button). |
 | Personal token | Jira → personal settings → **My worksites** → *Generate token*. Shown **once**; the app only keeps its sha256 fingerprint. |
 
 Every request below uses `Authorization: Bearer <token>`. Export both once:
 
 ```bash
-export CHANTIER_URL="https://<INSTALLATION>.webtrigger.atlassian.app/v2/<APP_ID>/ingest"
+export CHANTIER_URL="https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ"
 export CHANTIER_TOKEN="<your personal token>"
 ```
 
@@ -132,7 +132,7 @@ settings snippet. Only the token stays on your machine.
 git clone <example-repo-url> && cd <example-repo>
 git checkout -b feature/PROJ-101
 export CHANTIER_TOKEN="<your personal token>"     # never committed
-export CHANTIER_URL="https://<INSTALLATION>.webtrigger.atlassian.app/v2/<APP_ID>/ingest"
+export CHANTIER_URL="https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ"
 ```
 
 Merge `templates/hook/settings.json` (same content as the repo's `.chantier/settings.json`) into

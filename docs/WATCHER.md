@@ -37,7 +37,7 @@ the repo travels in the `X-Chantier-Repo` header. `.git`, `node_modules`,
 ```bash
 cp templates/watcher/chantier-watch.mjs ~/bin/chantier-watch
 chmod +x ~/bin/chantier-watch
-export CHANTIER_URL="https://<INSTALLATION>.webtrigger.atlassian.app/v2/<APP_ID>/ingest"
+export CHANTIER_URL="https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ"
 export CHANTIER_TOKEN="<personal token>"   # stays on your machine, never committed
 chantier-watch                             # run inside the repo worktree
 ```

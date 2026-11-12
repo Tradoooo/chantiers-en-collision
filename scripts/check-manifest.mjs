@@ -25,7 +25,7 @@ const EXPECTED_TOOLS = [
   "declare-footprint", "check-zone", "who-touches", "get-worksite",
   "predict-footprint", "list-collisions", "list-clear-work", "next-clear-ticket",
   "plan-parallel-work", "measure-parallel-width", "reserve-zone", "post-notice",
-  "resolve-collision", "close-worksite", "report-conflict",
+  "resolve-collision", "close-worksite", "report-conflict", "create-hook-token",
 ];
 const VERBS = new Set(["GET", "CREATE", "UPDATE"]);
 const INPUT_TYPES = new Set(["string", "integer", "number", "boolean"]);
@@ -93,6 +93,9 @@ const fnKeys = new Set(functions.map((f) => f.key));
 for (const f of functions) {
   if (!/^index\.[A-Za-z0-9_]+$/.test(f.handler ?? "")) {
     err(`function ${f.key}: handler must look like index.<exportedName>`);
+  }
+  if ((f.key ?? "").length > 23) {
+    err(`function key over 23 chars (forge lint valid-module-required): ${f.key}`);
   }
 }
 const referenced = [];

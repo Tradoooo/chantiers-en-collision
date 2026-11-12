@@ -1,3 +1,5 @@
+Recorded draft: site/assets/demo.mp4
+
 # Video script — sub­mis­sion screencast (English, < 5 min)
 
 Storyboard: `docs/SPEC.md` §23. The whole film runs on the **real, deployed**

@@ -201,7 +201,7 @@ describe("reservation-driven collision (spec §8)", () => {
   it("a reservation alone blocks a declaration, and closing frees it", async () => {
     const { ctx } = makeCtx({ sessionRef: "s1" });
     // PROJ-93 reserves WITHOUT declaring any footprint
-    const { reserveZone } = await import("../../src/services/reservations");
+    const { reserveZone } = await import("../../src/services/reservations.js");
     const res = await reserveZone(ctx, {
       issueKey: "PROJ-93", repoSlug: REPO, paths: "db/migrations", minutes: 120,
     });
@@ -217,7 +217,7 @@ describe("reservation-driven collision (spec §8)", () => {
     expect(blocked.kind).toBe("wait");
     expect(blocked.collisions[0]?.degree).toBe(4);
 
-    const { closeWorksite } = await import("../../src/services/worksites");
+    const { closeWorksite } = await import("../../src/services/worksites.js");
     await closeWorksite(ctx, { issueKey: "PROJ-93" });
     const freed = await declareFootprint(karim, {
       issueKey: "PROJ-101", repoSlug: REPO, paths: "db/migrations/0043.sql", session: "s2",

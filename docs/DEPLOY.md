@@ -185,7 +185,7 @@ Then trigger the smoke:
 
 ```bash
 gh workflow run smoke-e2e.yml \
-  -f site_url="https://<INSTALLATION>.webtrigger.atlassian.app/v2/<APP_ID>"
+  -f site_url="https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ"
 ```
 
 Both `…/ingest`-suffixed and unsuffixed `site_url` forms are accepted. Until the
@@ -216,7 +216,7 @@ placeholders:
 
 | Where | What to replace |
 |---|---|
-| `docs/JUDGES.md` | `https://<INSTALLATION>.webtrigger.atlassian.app/v2/<APP_ID>/ingest` (copy button too) |
+| `docs/JUDGES.md` | `https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ` (copy button too) |
 | `acme/billing-demo` → `.claude/settings.json` | the `PreToolUse` URL `<INSTALLATION>` / `<APP_ID>` |
 | `acme/billing-demo` → footprint workflow | secrets `CHANTIER_URL` / `CHANTIER_PROJECT_TOKEN` |
 | `templates/hook/settings.json` | `<INSTALLATION>` / `<APP_ID>` in the `PreToolUse` URL |
@@ -232,7 +232,7 @@ real rebase conflict, the conflicting paths to `/ci/conflict` — both fail-open
 
 - **"Web trigger 404 / wrong URL."** `ingest` uses `urlFormat: v2`: the path
   ends with the route, i.e.
-  `https://<INSTALLATION>.webtrigger.atlassian.app/v2/<APP_ID>/ingest/<route>`.
+  `https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ/<route>`.
   Routes are matched by suffix, so `/ingest/touch` and `/ingest/ci/footprint`
   both resolve. A trailing route name (`/open`) is **required**; the bare
   `/ingest` is not a route (it answers 200 empty — fail-open — which is *not* a
@@ -249,3 +249,72 @@ real rebase conflict, the conflicting paths to `/ci/conflict` — both fail-open
 - **Rovo agent prompt looks like a literal string.** `prompt: prompts/site-foreman.md`
   needs Forge CLI ≥ 10.6.0 to resolve a relative path. If it does not, the string
   is taken literally — upgrade the CLI before `forge deploy`.
+---
+
+## Deployment actually performed (12 November 2026, ~01:40 Paris) — reproduce as-is
+
+App created, deployed and installed **for real** with `forge-atlassian` 15.1.0
+(the global `forge` binary on this machine is Foundry/Solidity), account
+`baptiste.faisy@gmail.com`, credentials from `~/.atlassian-login` (email/site)
+and `~/.atlassian-api-token` via `FORGE_EMAIL` / `FORGE_API_TOKEN`.
+
+| Element | Value |
+|---|---|
+| App | `Chantiers en collision` — id `ari:cloud:ecosystem::app/2ef208cc-6621-42a7-8557-5ce5ab3f6882` |
+| Developer Space | `laddition` (`abf72fff-edaf-4259-900c-743702f0d1f2`) |
+| Site | `one-atlas-cndz.atlassian.net` (free 90-day demo site) |
+| Environment | `development` v2.0.x — deployed + installed (Jira) |
+| `forge lint` | **No issues found** |
+| Custom field | `Collisions` = `customfield_10870` (created via REST; also set as Forge variable `CHANTIERS_COLLISIONS_FIELD_ID`) |
+| Web trigger (ingest) | `https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ` + route suffix (`/open`, `/touch`, `/close`, `/ci/footprint`, `/ci/conflict`) |
+| MCP endpoint | `https://mcp.atlassian.com/forge/2ef208cc-6621-42a7-8557-5ce5ab3f6882` — answers 404 **until the external exposure is enabled** (manual admin step below) |
+| Console | https://developer.atlassian.com/console/myapps/2ef208cc-6621-42a7-8557-5ce5ab3f6882 |
+
+Commands actually run:
+
+```bash
+export FORGE_EMAIL=$(sed -n '1p' ~/.atlassian-login | sed 's/^email=//')
+export FORGE_API_TOKEN=$(cat ~/.atlassian-api-token)
+
+forge-atlassian create "Chantiers en collision" -t jira-issue-panel-ui-kit \
+  -d /tmp/cc-mint -s abf72fff-edaf-4259-900c-743702f0d1f2 -y   # → app.id → manifest.yml
+forge-atlassian lint                                            # No issues found
+forge-atlassian deploy -e development --non-interactive --approve MAJOR_VERSION_RULE
+forge-atlassian install -e development -p jira -s one-atlas-cndz.atlassian.net \
+  --non-interactive --confirm-scopes
+curl -s -u "$FORGE_EMAIL:$FORGE_API_TOKEN" -X POST \
+  https://one-atlas-cndz.atlassian.net/rest/api/3/field \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Collisions","description":"Open collisions and worst degree (Chantiers en collision).","type":"com.atlassian.jira.plugin.system.customfieldtypes:textfield"}'
+forge-atlassian variables set CHANTIERS_COLLISIONS_FIELD_ID customfield_10870 -e development
+forge-atlassian webtrigger create -f ingest -s one-atlas-cndz.atlassian.net -p jira -e development
+forge-atlassian deploy -e development --non-interactive        # apply variables
+```
+
+Verified live: `POST <webtrigger>/touch` without a token → **200 empty**
+(fail-open, spec §22.11); invalid token on a hook route → 200 empty (an agent
+is never blocked).
+
+### Remaining manual steps (browser, ~5 min)
+
+1. **External MCP exposure** (for Claude Code / Cursor): admin.atlassian.com →
+   Apps → Sites → `one-atlas-cndz` → Connected apps → *Chantiers en collision*
+   → enable the tools. Then the endpoint
+   `https://mcp.atlassian.com/forge/2ef208cc-6621-42a7-8557-5ce5ab3f6882`
+   answers 401 + OAuth 2.1 metadata instead of 404.
+2. **Tokens**: ask the Rovo agent *Site foreman* (Rovo Chat on the site) to run
+   `create-hook-token` (personal + project), or use any internal Rovo MCP
+   client. The clear value is shown once.
+3. Optional: `forge-atlassian deploy -e production` + install production for
+   the submission (the Marketplace/judges usually get the production env).
+
+### Known warnings (accepted)
+
+- **UI Kit 1 deprecated** (issue panel, map, project settings, gadget): works,
+  warns at deploy. Migration to UI Kit 2 (`@forge/react`) is backlog
+  (docs/IDEAS.md). `jira:sprintAction` and `jira:personalSettingsPage` are
+  Custom-UI-only in 2026 and are parked out of the manifest for now — sprint
+  check stays reachable through `plan-parallel-work`/`list-collisions`, tokens
+  through `create-hook-token`.
+- **Runs on Atlassian**: not eligible while the web trigger is `dynamic`
+  (it must return hook JSON). Expected.
