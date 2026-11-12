@@ -48,7 +48,17 @@ import { createToken as createTokenService, verifyToken as verifyTokenService } 
 import type { CreatedToken } from "../services/tokens";
 import { resolveRepo } from "../services/shared";
 import { deploymentStatus, type StatusReport } from "./status";
-import { timingSafeEqual } from "node:crypto";
+import {
+  ctxOptions,
+  emptyResponse,
+  header,
+  jsonResponse,
+  onBootstrap,
+  onStatus,
+  parseBody,
+  rec,
+  text,
+} from "./webtrigger-admin";
 
 export type WebtriggerRoute =
   | "open"
@@ -106,7 +116,6 @@ export const LIVE_DEPS: WebtriggerDeps = {
   ensureRepo: (ctx, slug) => resolveRepo(ctx, slug),
 };
 
-const JSON_HEADERS = { "Content-Type": ["application/json"] };
 const ROUTE_SUFFIXES: [string, WebtriggerRoute][] = [
   ["/ci/footprint", "ci-footprint"],
   ["/ci/conflict", "ci-conflict"],
@@ -127,13 +136,7 @@ const HOOK_EVENT_NAMES: Record<"open" | "touch" | "close", string> = {
 /* Small untyped-JSON helpers                                           */
 /* ------------------------------------------------------------------ */
 
-function rec(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
-}
 
-function text(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() !== "" ? value : undefined;
-}
 
 function bool(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value;
@@ -150,14 +153,6 @@ function lines(value: unknown): string[] {
   return raw === undefined ? [] : raw.split("\n");
 }
 
-function parseBody(body?: string): Record<string, unknown> {
-  if (body === undefined || body.trim() === "") return {};
-  try {
-    return rec(JSON.parse(body));
-  } catch {
-    return {}; // a malformed body is just an empty one: fail open
-  }
-}
 
 /* ------------------------------------------------------------------ */
 /* Routing, auth                                                        */
@@ -174,16 +169,6 @@ export function routeOf(path?: string): WebtriggerRoute | undefined {
   return undefined;
 }
 
-/** First header value, case-insensitively (Forge lower-cases, proxies may not). */
-function header(headers: WebtriggerRequest["headers"], name: string): string | undefined {
-  if (headers === undefined) return undefined;
-  const wanted = name.toLowerCase();
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() !== wanted) continue;
-    return Array.isArray(value) ? text(value[0]) : text(value);
-  }
-  return undefined;
-}
 
 /** `Authorization: Bearer <token>` → the token, else undefined. */
 export function bearerOf(headers: WebtriggerRequest["headers"]): string | undefined {
@@ -199,13 +184,6 @@ export function tokenAllows(route: WebtriggerRoute, token: HookToken): boolean {
   return route === "ci-footprint" || route === "ci-conflict" || route === "status";
 }
 
-/** Constant-time string comparison (bootstrap secret). */
-function secretEquals(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
-}
 
 /* ------------------------------------------------------------------ */
 /* SANITIZATION (§17) — nothing but path/session/cwd/agent leaves here   */
@@ -292,14 +270,7 @@ export function sanitizeCiConflict(
 /* Responses                                                            */
 /* ------------------------------------------------------------------ */
 
-/** 200 with an empty body: the agent continues, nothing is injected. */
-export function emptyResponse(): WebtriggerHttpResponse {
-  return { statusCode: 200, body: "" };
-}
 
-function jsonResponse(payload: unknown, statusCode = 200): WebtriggerHttpResponse {
-  return { statusCode, headers: JSON_HEADERS, body: JSON.stringify(payload) };
-}
 
 /** The hook JSON of spec §9.3: additionalContext, or a hard-mode deny. */
 export function hookJson(hookEventName: string, response: HookResponse): WebtriggerHttpResponse {
@@ -322,23 +293,6 @@ export function hookJson(hookEventName: string, response: HookResponse): Webtrig
 /* The router                                                           */
 /* ------------------------------------------------------------------ */
 
-function ctxOptions(
-  route: WebtriggerRoute,
-  token: HookToken,
-  sessionRef?: string,
-  agentRef?: string,
-  issueKey?: string,
-): BuildCtxOptions {
-  const options: BuildCtxOptions = {
-    token,
-    client: route.startsWith("ci") ? "ci" : "hook",
-    sessionRef,
-    agentRef,
-    issueKey,
-  };
-  if (token.projectId !== undefined) options.projectId = token.projectId;
-  return options;
-}
 
 /**
  * Route one web trigger request. PURE: every side effect goes through `deps`.
@@ -389,62 +343,8 @@ async function dispatch(
   return await onCiConflict(body, token, deps);
 }
 
-/** GET-ish observability: what the installation currently holds. */
-async function onStatus(
-  token: HookToken,
-  deps: WebtriggerDeps,
-): Promise<WebtriggerHttpResponse> {
-  const ctx = await deps.buildCtx(ctxOptions("status", token));
-  return jsonResponse(await deps.status(ctx));
-}
 
-/**
- * One-shot token minting, armed by the BOOTSTRAP_SECRET deployment variable
- * (set → deploy → mint → REMOVE the variable → deploy). Without the variable
- * the route does not exist. The secret is compared in constant time.
- */
-async function onBootstrap(
-  request: WebtriggerRequest,
-  deps: WebtriggerDeps,
-): Promise<WebtriggerHttpResponse> {
-  const secret = process.env.BOOTSTRAP_SECRET;
-  if (secret === undefined || secret === "") return emptyResponse();
-  const provided = header(request.headers, "x-bootstrap-secret");
-  if (provided === undefined || !secretEquals(provided, secret)) {
-    return jsonResponse({ error: "forbidden" }, 403);
-  }
-  const body = parseBody(request.body);
-  const account =
-    text(body.account) ?? process.env.BOOTSTRAP_ACCOUNT ?? "bootstrap@chantiers.local";
-  const scope = text(body.scope) === "project" ? "project" : "personal";
-  const options: BuildCtxOptions = {
-    context: { accountId: account },
-    client: "bootstrap",
-  };
-  const project = text(body.project);
-  if (project !== undefined) options.projectId = project.toUpperCase();
-  const ctx = await deps.buildCtx(options);
-  const repoSlug = text(body.repoSlug) ?? text(body.repo);
-  try {
-    if (repoSlug !== undefined) await deps.ensureRepo(ctx, normalizeSlugSafe(repoSlug));
-    const created = await deps.createToken(ctx, scope);
-    return jsonResponse({
-      token: created.token,
-      scope: created.scope,
-      shownOnce: true,
-      repoSlug,
-      account,
-    });
-  } catch (e) {
-    // Bootstrap is an operator route, not an agent hook: say what broke.
-    console.error("bootstrap failed", e);
-    return jsonResponse({ error: `bootstrap failed: ${(e as Error).message}` }, 500);
-  }
-}
 
-function normalizeSlugSafe(slug: string): string {
-  return slug.trim().replace(/^\/+|\/+$/g, "");
-}
 
 async function onTouch(
   body: Record<string, unknown>,
