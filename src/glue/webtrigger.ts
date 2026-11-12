@@ -44,9 +44,20 @@ import {
   hookTouch as hookTouchService,
   reportConflict as reportConflictService,
 } from "../services/ingest";
-import { verifyToken as verifyTokenService } from "../services/tokens";
+import { createToken as createTokenService, verifyToken as verifyTokenService } from "../services/tokens";
+import type { CreatedToken } from "../services/tokens";
+import { resolveRepo } from "../services/shared";
+import { deploymentStatus, type StatusReport } from "./status";
+import { timingSafeEqual } from "node:crypto";
 
-export type WebtriggerRoute = "open" | "touch" | "close" | "ci-footprint" | "ci-conflict";
+export type WebtriggerRoute =
+  | "open"
+  | "touch"
+  | "close"
+  | "ci-footprint"
+  | "ci-conflict"
+  | "status"
+  | "bootstrap";
 
 /** What Forge hands to a `urlFormat: v2` + `response: {type: dynamic}` trigger. */
 export interface WebtriggerRequest {
@@ -76,6 +87,9 @@ export interface WebtriggerDeps {
     ctx: Ctx,
     input: { issueKey: string; repoSlug: string; paths: string; withIssueKey?: string },
   ): Promise<RealConflict>;
+  status(ctx: Ctx): Promise<StatusReport>;
+  createToken(ctx: Ctx, scope: "personal" | "project"): Promise<CreatedToken>;
+  ensureRepo(ctx: Ctx, slug: string): Promise<unknown>;
 }
 
 /** The real collaborators (used when no deps are injected). */
@@ -87,12 +101,17 @@ export const LIVE_DEPS: WebtriggerDeps = {
   hookClose: hookCloseService,
   ciFootprint: ciFootprintService,
   reportConflict: reportConflictService,
+  status: deploymentStatus,
+  createToken: createTokenService,
+  ensureRepo: (ctx, slug) => resolveRepo(ctx, slug),
 };
 
 const JSON_HEADERS = { "Content-Type": ["application/json"] };
 const ROUTE_SUFFIXES: [string, WebtriggerRoute][] = [
   ["/ci/footprint", "ci-footprint"],
   ["/ci/conflict", "ci-conflict"],
+  ["/status", "status"],
+  ["/bootstrap", "bootstrap"],
   ["/open", "open"],
   ["/touch", "touch"],
   ["/close", "close"],
@@ -174,10 +193,18 @@ export function bearerOf(headers: WebtriggerRequest["headers"]): string | undefi
   return match === null ? undefined : match[1].trim();
 }
 
-/** A project token may only send attested footprints and real conflicts. */
+/** A project token may only send attested footprints, conflicts and status. */
 export function tokenAllows(route: WebtriggerRoute, token: HookToken): boolean {
   if (token.scope !== "project") return true;
-  return route === "ci-footprint" || route === "ci-conflict";
+  return route === "ci-footprint" || route === "ci-conflict" || route === "status";
+}
+
+/** Constant-time string comparison (bootstrap secret). */
+function secretEquals(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }
 
 /* ------------------------------------------------------------------ */
@@ -324,6 +351,10 @@ export async function routeWebtrigger(
   try {
     const route = routeOf(request.path);
     if (route === undefined) return emptyResponse();
+    // Bootstrap is gated by a deployment variable, not by a token: it is the
+    // route that MINTS the first tokens. Dead (empty 200) unless
+    // BOOTSTRAP_SECRET is set — and the operator removes it right after.
+    if (route === "bootstrap") return await onBootstrap(request, deps);
     const token = bearerOf(request.headers);
     if (token === undefined) return emptyResponse();
     const baseCtx = await deps.buildCtx({});
@@ -352,8 +383,60 @@ async function dispatch(
   if (route === "touch") return await onTouch(body, token, deps, repoSlug);
   if (route === "open") return await onOpen(body, token, deps, repoSlug);
   if (route === "close") return await onClose(body, token, deps);
+  if (route === "status") return await onStatus(token, deps);
   if (route === "ci-footprint") return await onCiFootprint(body, token, deps);
   return await onCiConflict(body, token, deps);
+}
+
+/** GET-ish observability: what the installation currently holds. */
+async function onStatus(
+  token: HookToken,
+  deps: WebtriggerDeps,
+): Promise<WebtriggerHttpResponse> {
+  const ctx = await deps.buildCtx(ctxOptions("status", token));
+  return jsonResponse(await deps.status(ctx));
+}
+
+/**
+ * One-shot token minting, armed by the BOOTSTRAP_SECRET deployment variable
+ * (set → deploy → mint → REMOVE the variable → deploy). Without the variable
+ * the route does not exist. The secret is compared in constant time.
+ */
+async function onBootstrap(
+  request: WebtriggerRequest,
+  deps: WebtriggerDeps,
+): Promise<WebtriggerHttpResponse> {
+  const secret = process.env.BOOTSTRAP_SECRET;
+  if (secret === undefined || secret === "") return emptyResponse();
+  const provided = header(request.headers, "x-bootstrap-secret");
+  if (provided === undefined || !secretEquals(provided, secret)) {
+    return jsonResponse({ error: "forbidden" }, 403);
+  }
+  const body = parseBody(request.body);
+  const account =
+    text(body.account) ?? process.env.BOOTSTRAP_ACCOUNT ?? "bootstrap@chantiers.local";
+  const scope = text(body.scope) === "project" ? "project" : "personal";
+  const options: BuildCtxOptions = {
+    context: { accountId: account },
+    client: "bootstrap",
+  };
+  const project = text(body.project);
+  if (project !== undefined) options.projectId = project.toUpperCase();
+  const ctx = await deps.buildCtx(options);
+  const repoSlug = text(body.repoSlug) ?? text(body.repo);
+  if (repoSlug !== undefined) await deps.ensureRepo(ctx, normalizeSlugSafe(repoSlug));
+  const created = await deps.createToken(ctx, scope);
+  return jsonResponse({
+    token: created.token,
+    scope: created.scope,
+    shownOnce: true,
+    repoSlug,
+    account,
+  });
+}
+
+function normalizeSlugSafe(slug: string): string {
+  return slug.trim().replace(/^\/+|\/+$/g, "");
 }
 
 async function onTouch(

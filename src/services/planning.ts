@@ -21,7 +21,7 @@ import type {
   Zone,
 } from "../core/types";
 import type { Ctx } from "./ctx";
-import { loadOpenWorksites, resolveRepo } from "./shared";
+import { loadOpenWorksites, projectIdOfIssueKey, resolveRepo } from "./shared";
 
 async function search(ctx: Ctx, jql: string): Promise<TicketMeta[]> {
   if (!ctx.jira?.searchIssues) {
@@ -30,13 +30,25 @@ async function search(ctx: Ctx, jql: string): Promise<TicketMeta[]> {
   return ctx.jira.searchIssues(jql);
 }
 
-async function firstRepo(ctx: Ctx, repoSlug?: string) {
+/**
+ * Repo + zones for a planning call. The JQL carries no project context on
+ * the webtrigger side, so callers pass the project derived from the first
+ * ticket key when there is no explicit slug.
+ */
+async function firstRepo(ctx: Ctx, repoSlug?: string, projectId?: string) {
   if (repoSlug) return resolveRepo(ctx, repoSlug);
-  const repos = await ctx.stores.repos.listByProject(ctx.projectId);
+  const pid = projectId ?? ctx.projectId;
+  const repos = await ctx.stores.repos.listByProject(pid);
   const repo = repos[0];
   if (!repo) throw new Error("no repository registered for this project yet");
   const zones = await ctx.stores.zones.listByRepo(repo.id);
   return { repo, zones };
+}
+
+/** Project bucket derived from the first ticket of a JQL result. */
+function projectOf(tickets: TicketMeta[]): string | undefined {
+  const first = tickets[0];
+  return first === undefined ? undefined : projectIdOfIssueKey(first.issueKey);
 }
 
 /** Declared/observed footprint of a ticket, else its stored/live prediction. */
@@ -124,7 +136,7 @@ export async function listCollisions(
   input: { jql: string },
 ): Promise<Collision[]> {
   const tickets = await search(ctx, input.jql);
-  const { repo } = await firstRepo(ctx);
+  const { repo } = await firstRepo(ctx, undefined, projectOf(tickets));
   const zones = await ctx.stores.zones.listByRepo(repo.id);
   const plans: PlanTicket[] = [];
   for (const t of tickets) plans.push(await planTicketFor(ctx, t, repo.id, repo.slug));
@@ -256,7 +268,7 @@ export async function planParallelWork(
   input: { jql: string; workers: number },
 ): Promise<WavePlan> {
   const tickets = await search(ctx, input.jql);
-  const { repo, zones } = await firstRepo(ctx);
+  const { repo, zones } = await firstRepo(ctx, undefined, projectOf(tickets));
   const plans: PlanTicket[] = [];
   for (const t of tickets) plans.push(await planTicketFor(ctx, t, repo.id, repo.slug));
   return planWaves(plans, Math.max(1, input.workers), { zones });
@@ -312,7 +324,7 @@ export async function sprintCheck(
     };
   }
   const tickets = await search(ctx, `issue in (${issueKeys.join(",")})`);
-  const { repo, zones } = await firstRepo(ctx);
+  const { repo, zones } = await firstRepo(ctx, undefined, projectOf(tickets));
   const plans: PlanTicket[] = [];
   for (const t of tickets) plans.push(await planTicketFor(ctx, t, repo.id, repo.slug));
 
@@ -333,7 +345,7 @@ export async function collisionStats(
   ctx: Ctx,
   input?: { repoSlug?: string; since?: string },
 ): Promise<CollisionStats> {
-  const { repo } = await firstRepo(ctx, input?.repoSlug);
+  const { repo } = await firstRepo(ctx, input?.repoSlug, undefined);
   const counts = await ctx.stores.collisions.countByPhase(repo.id, input?.since);
   const conflicts = await ctx.stores.conflicts.list(repo.id, input?.since);
   return {

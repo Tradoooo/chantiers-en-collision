@@ -26,6 +26,7 @@ import type {
 import type { Ctx } from "./ctx";
 import {
   buildVerdict,
+  ctxForIssue,
   ensureWorksite,
   loadOpenWorksites,
   logEvent,
@@ -92,16 +93,18 @@ export async function hookOpen(
         },
       };
     }
-    const { repo } = await resolveRepo(ctx, ev.repoSlug);
-    const w = await ensureWorksite(ctx, {
-      issueKey: match[1],
+    // The hook carries no Jira context: the repo bucket follows the ticket.
+    const issueCtx = ctxForIssue(ctx, match[1]!);
+    const { repo } = await resolveRepo(issueCtx, ev.repoSlug);
+    const w = await ensureWorksite(issueCtx, {
+      issueKey: match[1]!,
       repoId: repo.id,
       branch: ev.branch,
       sessionRef: ev.sessionRef,
       state: "open",
     });
-    await logEvent(ctx, "hook.open", w.id, { branch: ev.branch });
-    const verdict = await detectAndVerdict(ctx, w, repo.id, true);
+    await logEvent(issueCtx, "hook.open", w.id, { branch: ev.branch });
+    const verdict = await detectAndVerdict(issueCtx, w, repo.id, true);
     const notices = renderNoticesForAgent(verdict.pendingNotices, "en");
     const neighbours = verdict.collisions
       .map((c) => `${c.neighbor.issueKey} (${c.neighbor.actorLabel}) on ${c.path}`)
@@ -205,17 +208,20 @@ export async function hookTouch(ctx: Ctx, ev: HookTouchEvent): Promise<HookRespo
     const w = await ctx.stores.worksites.findBySession(session.id);
     if (!w || w.state === "closed") return {};
 
+    // Rules and detection read the project bucket of the TICKET, not the
+    // webtrigger default: the worksite carries its issueKey.
+    const issueCtx = ctxForIssue(ctx, w.issueKey);
     const rel = relativize(ev.path, ev.cwd);
-    await recordObserved(ctx, w.id, rel);
+    await recordObserved(issueCtx, w.id, rel);
 
-    const rules = await rulesFor(ctx);
+    const rules = await rulesFor(issueCtx);
     if (rules.hardMode) {
-      const denied = await hardModeDeny(ctx, w.id, rel, w.repoId);
+      const denied = await hardModeDeny(issueCtx, w.id, rel, w.repoId);
       if (denied) return denied;
     }
 
-    const fresh = (await ctx.stores.worksites.findById(w.id)) ?? w;
-    const verdict = await detectAndVerdict(ctx, fresh, w.repoId, true);
+    const fresh = (await issueCtx.stores.worksites.findById(w.id)) ?? w;
+    const verdict = await detectAndVerdict(issueCtx, fresh, w.repoId, true);
     if (verdict.collisions.length === 0 && verdict.pendingNotices.length === 0) {
       return {};
     }
@@ -258,15 +264,15 @@ export async function ciFootprint(
   ctx: Ctx,
   input: CiFootprintInput,
 ): Promise<{ worksite?: Worksite; entries: number }> {
-  const { repo } = await resolveRepo(ctx, input.repoSlug);
   const issueKey = input.issueKey ?? TICKET_KEY.exec(input.branch)?.[1];
-  const now = ctx.now();
-
   if (!issueKey) {
     // Push on a branch without a ticket key: nothing to attach to.
     return { entries: 0 };
   }
-  const w = await ensureWorksite(ctx, {
+  const issueCtx = ctxForIssue(ctx, issueKey);
+  const { repo } = await resolveRepo(issueCtx, input.repoSlug);
+  const now = issueCtx.now();
+  const w = await ensureWorksite(issueCtx, {
     issueKey,
     repoId: repo.id,
     branch: input.branch,
@@ -276,10 +282,10 @@ export async function ciFootprint(
   });
 
   const files = splitPathsBlock(input.files.join("\n"));
-  const existing = await ctx.stores.footprints.listByWorksite(w.id);
+  const existing = await issueCtx.stores.footprints.listByWorksite(w.id);
   const incoming = entriesFromPaths(files.join("\n"), w.id, "attested", "edit", now);
   const merged = mergeEntries(existing, incoming, now);
-  if (merged.toAdd.length > 0) await ctx.stores.footprints.add(merged.toAdd);
+  if (merged.toAdd.length > 0) await issueCtx.stores.footprints.add(merged.toAdd);
 
   const patch: Partial<Worksite> = { lastActivityAt: now };
   if (input.prOpen) {
@@ -293,11 +299,11 @@ export async function ciFootprint(
     patch.closedAt = now;
     patch.outcome = "merged";
   }
-  const updated = (await ctx.stores.worksites.update(w.id, patch)) ?? w;
-  await logEvent(ctx, "ci.footprint", w.id, { files: files.length, onDefault });
+  const updated = (await issueCtx.stores.worksites.update(w.id, patch)) ?? w;
+  await logEvent(issueCtx, "ci.footprint", w.id, { files: files.length, onDefault });
 
   if (!onDefault) {
-    await detectAndVerdict(ctx, updated, repo.id, false);
+    await detectAndVerdict(issueCtx, updated, repo.id, false);
   }
   return { worksite: updated, entries: merged.toAdd.length };
 }

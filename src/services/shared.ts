@@ -40,6 +40,24 @@ import type { Ctx } from "./ctx";
 /* Repos and zones                                                     */
 /* ------------------------------------------------------------------ */
 
+/**
+ * "PROJ-88" → "PROJ". The Jira project keys the repos/zones/rules buckets:
+ * webtrigger calls carry no Jira context, so services derive it from the
+ * ticket key to stay aligned with the triggers and the MCP calls.
+ */
+export function projectIdOfIssueKey(issueKey: string): string | undefined {
+  const match = /^([A-Za-z][A-Za-z0-9_]*)-\d+/.exec(issueKey.trim());
+  return match === null ? undefined : match[1]!.toUpperCase();
+}
+
+/** Ctx with the project bucket derived from a ticket key (fallback: as-is). */
+export function ctxForIssue(ctx: Ctx, issueKey: string): Ctx {
+  const projectId = projectIdOfIssueKey(issueKey);
+  return projectId === undefined || projectId === ctx.projectId
+    ? ctx
+    : { ...ctx, projectId };
+}
+
 /** Trim a slug; drop leading/trailing slashes; keep case (provider-side). */
 export function normalizeSlug(slug: string): string {
   return slug.trim().replace(/^\/+|\/+$/g, "");

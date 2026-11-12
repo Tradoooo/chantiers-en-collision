@@ -13,7 +13,7 @@ import { classifyPath } from "../core/paths";
 import { planWaves } from "../core/waves";
 import type { PlanTicket, Zone } from "../core/types";
 import type { Ctx } from "./ctx";
-import { loadOpenWorksites, resolveRepo } from "./shared";
+import { loadOpenWorksites, projectIdOfIssueKey, resolveRepo } from "./shared";
 import { asStructural, planTicketFor, virtualSides } from "./planning";
 
 export type { ParallelWidthReport, WidthBottleneck } from "../core/types";
@@ -169,7 +169,16 @@ export async function measureParallelWidth(
   ctx: Ctx,
   input: { jql?: string; repoSlug?: string } = {},
 ): Promise<ParallelWidthReport> {
-  const { repo, zones } = await resolveRepoOrFirst(ctx, input.repoSlug);
+  let jqlTickets: PlanTicket["issueKey"][] = [];
+  if (input.jql) {
+    if (!ctx.jira?.searchIssues) {
+      throw new Error("measure-parallel-width: jql requires the Jira port");
+    }
+    jqlTickets = (await ctx.jira.searchIssues(input.jql)).map((t) => t.issueKey);
+  }
+  const firstKey = jqlTickets[0];
+  const pid = firstKey === undefined ? undefined : projectIdOfIssueKey(firstKey);
+  const { repo, zones } = await resolveRepoOrFirst(ctx, input.repoSlug, pid);
   let tickets: PlanTicket[] = [];
   if (input.jql) tickets = await ticketsFromJql(ctx, input.jql, repo.id, repo.slug);
   if (tickets.length === 0 && !input.jql) tickets = await ticketsFromHistory(ctx, repo.slug);
@@ -197,11 +206,20 @@ export async function measureParallelWidth(
   return { width, ticketCount: tickets.length, bottlenecks, suggestion, confidence, note };
 }
 
-async function resolveRepoOrFirst(ctx: Ctx, repoSlug?: string) {
+async function resolveRepoOrFirst(
+  ctx: Ctx,
+  repoSlug?: string,
+  projectId?: string,
+) {
   if (repoSlug) return resolveRepo(ctx, repoSlug);
-  const repos = await ctx.stores.repos.listByProject(ctx.projectId);
+  const pid = projectId ?? ctx.projectId;
+  const repos = await ctx.stores.repos.listByProject(pid);
   const repo = repos[0];
-  if (!repo) throw new Error("no repository registered for this project yet");
+  if (!repo) {
+    throw new Error(
+      "no repository registered — pass repoSlug, or a jql whose tickets reveal the project",
+    );
+  }
   const zones = await ctx.stores.zones.listByRepo(repo.id);
   return { repo, zones };
 }

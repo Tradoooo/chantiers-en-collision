@@ -21,3 +21,4 @@ site/dist/
 # Logs
 npm-debug.log*
 *.log
+.tokens/

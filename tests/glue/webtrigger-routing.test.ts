@@ -13,7 +13,7 @@
  *      is refused on the hook routes (`/ci/*` only).
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Ctx } from "../../src/services/ctx";
 import type { HookToken, Identity } from "../../src/core/types";
 import {
@@ -59,6 +59,9 @@ interface Spies {
   hookClose: ReturnType<typeof vi.fn>;
   ciFootprint: ReturnType<typeof vi.fn>;
   reportConflict: ReturnType<typeof vi.fn>;
+  status: ReturnType<typeof vi.fn>;
+  createToken: ReturnType<typeof vi.fn>;
+  ensureRepo: ReturnType<typeof vi.fn>;
 }
 
 /** Spies for every collaborator; `token` is what verification returns. */
@@ -76,6 +79,18 @@ function makeSpies(token: HookToken | undefined = PERSONAL_TOKEN): Spies {
     wasDetected: true,
     reportedAt: NOW,
   }));
+  const status = vi.fn(async () => ({
+    generatedAt: NOW,
+    repos: [{ slug: "acme/billing", openWorksites: 2, openCollisions: 1, activeReservations: 1 }],
+    worksites: [],
+    recentEvents: [],
+  }));
+  const createToken = vi.fn(async () => ({
+    token: "clear-token-shown-once",
+    tokenHash: "hash-123",
+    scope: "personal" as const,
+  }));
+  const ensureRepo = vi.fn(async () => ({}));
   const deps: WebtriggerDeps = {
     buildCtx,
     verifyToken,
@@ -84,8 +99,14 @@ function makeSpies(token: HookToken | undefined = PERSONAL_TOKEN): Spies {
     hookClose,
     ciFootprint,
     reportConflict,
+    status,
+    createToken,
+    ensureRepo,
   };
-  return { buildCtx, verifyToken, hookOpen, hookTouch, hookClose, ciFootprint, reportConflict, deps };
+  return {
+    buildCtx, verifyToken, hookOpen, hookTouch, hookClose, ciFootprint, reportConflict,
+    status, createToken, ensureRepo, deps,
+  };
 }
 
 function request(path: string, body: unknown, token = "tok_personal"): WebtriggerRequest {
@@ -379,5 +400,90 @@ describe("routing", () => {
     const bad = await routeWebtrigger(request("/ingest/ci/footprint", { branch: "b" }), spies.deps);
     expect(bad.statusCode).toBe(400);
     expect(spies.ciFootprint).not.toHaveBeenCalled();
+  });
+});
+
+
+/* ------------------------------------------------------------------ */
+/* /status and /bootstrap                                              */
+/* ------------------------------------------------------------------ */
+
+function bootstrapRequest(secret: string | undefined, body: unknown): WebtriggerRequest {
+  const headers: Record<string, string[]> = { "content-type": ["application/json"] };
+  if (secret !== undefined) headers["x-bootstrap-secret"] = [secret];
+  return {
+    method: "POST",
+    path: "/public/abc123/bootstrap",
+    headers,
+    body: JSON.stringify(body ?? {}),
+  };
+}
+
+describe("status route", () => {
+  it("answers the deployment status to a personal token", async () => {
+    const spies = makeSpies();
+    const res = await routeWebtrigger(request("/public/abc123/status", {}), spies.deps);
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body ?? "{}") as { repos: unknown[] };
+    expect(Array.isArray(body.repos)).toBe(true);
+    expect(spies.status).toHaveBeenCalledTimes(1);
+  });
+
+  it("a project token may read the status too", async () => {
+    const spies = makeSpies(PROJECT_TOKEN);
+    const res = await routeWebtrigger(
+      request("/public/abc123/status", {}, "tok_project"),
+      spies.deps,
+    );
+    expect(res.statusCode).toBe(200);
+    expect(spies.status).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("bootstrap route", () => {
+  afterEach(() => {
+    delete process.env.BOOTSTRAP_SECRET;
+  });
+
+  it("is dead (empty 200) while BOOTSTRAP_SECRET is not set", async () => {
+    delete process.env.BOOTSTRAP_SECRET;
+    const spies = makeSpies();
+    const res = await routeWebtrigger(bootstrapRequest("whatever", {}), spies.deps);
+    expect(res.statusCode).toBe(200);
+    expect(res.body ?? "").toBe("");
+    expect(spies.createToken).not.toHaveBeenCalled();
+  });
+
+  it("refuses a wrong secret with 403", async () => {
+    process.env.BOOTSTRAP_SECRET = "s3cret-armed";
+    const spies = makeSpies();
+    const res = await routeWebtrigger(bootstrapRequest("nope", {}), spies.deps);
+    expect(res.statusCode).toBe(403);
+    expect(spies.createToken).not.toHaveBeenCalled();
+  });
+
+  it("mints a token and registers the repo when armed", async () => {
+    process.env.BOOTSTRAP_SECRET = "s3cret-armed";
+    const spies = makeSpies();
+    const res = await routeWebtrigger(
+      bootstrapRequest("s3cret-armed", {
+        scope: "project",
+        repoSlug: " acme/billing ",
+        account: "lea@example.com",
+      }),
+      spies.deps,
+    );
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body ?? "{}") as { token: string; shownOnce: boolean };
+    expect(body.token).toBe("clear-token-shown-once");
+    expect(body.shownOnce).toBe(true);
+    expect(spies.createToken).toHaveBeenCalledTimes(1);
+    expect((spies.createToken.mock.calls[0] as unknown[])[1]).toBe("project");
+    expect(spies.ensureRepo).toHaveBeenCalledTimes(1);
+    expect((spies.ensureRepo.mock.calls[0] as unknown[])[1]).toBe("acme/billing");
+    const options = (spies.buildCtx.mock.calls[0] as unknown[])[0] as {
+      context?: { accountId?: string };
+    };
+    expect(options.context?.accountId).toBe("lea@example.com");
   });
 });
