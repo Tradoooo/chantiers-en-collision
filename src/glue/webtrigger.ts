@@ -365,7 +365,8 @@ export async function routeWebtrigger(
     if (!tokenAllows(route, verified)) return emptyResponse();
     const body = parseBody(request.body);
     return await dispatch(route, body, verified, deps, request);
-  } catch {
+  } catch (e) {
+    console.error("webtrigger route failed (fail-open)", e);
     return emptyResponse(); // FAIL-OPEN, always
   }
 }
@@ -424,15 +425,21 @@ async function onBootstrap(
   if (project !== undefined) options.projectId = project.toUpperCase();
   const ctx = await deps.buildCtx(options);
   const repoSlug = text(body.repoSlug) ?? text(body.repo);
-  if (repoSlug !== undefined) await deps.ensureRepo(ctx, normalizeSlugSafe(repoSlug));
-  const created = await deps.createToken(ctx, scope);
-  return jsonResponse({
-    token: created.token,
-    scope: created.scope,
-    shownOnce: true,
-    repoSlug,
-    account,
-  });
+  try {
+    if (repoSlug !== undefined) await deps.ensureRepo(ctx, normalizeSlugSafe(repoSlug));
+    const created = await deps.createToken(ctx, scope);
+    return jsonResponse({
+      token: created.token,
+      scope: created.scope,
+      shownOnce: true,
+      repoSlug,
+      account,
+    });
+  } catch (e) {
+    // Bootstrap is an operator route, not an agent hook: say what broke.
+    console.error("bootstrap failed", e);
+    return jsonResponse({ error: `bootstrap failed: ${(e as Error).message}` }, 500);
+  }
 }
 
 function normalizeSlugSafe(slug: string): string {

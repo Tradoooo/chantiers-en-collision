@@ -49,7 +49,7 @@ async function repoStatus(ctx: Ctx, repoId: string): Promise<StatusRepo> {
 
 export async function deploymentStatus(ctx: Ctx): Promise<StatusReport> {
   const ids = new Set<string>(await repoIdsOfWorksites(ctx));
-  for (const repo of await ctx.stores.repos.listByProject(ctx.projectId)) {
+  for (const repo of await ctx.stores.repos.listAll()) {
     ids.add(repo.id);
   }
   const repos: StatusRepo[] = [];

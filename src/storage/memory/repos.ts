@@ -108,6 +108,10 @@ export function createRepoStore(data: MemoryData, ids: IdGen, zones: ZoneStore):
       return out;
     },
 
+    async listAll(): Promise<RepoRecord[]> {
+      return [...data.repos.values()].map((repo) => clone(repo));
+    },
+
     async ensure(projectId: string, slug: string, defaultBranch?: string): Promise<RepoRecord> {
       const normalized = normalizeSlug(slug);
       const found = findRepoBySlug(data, projectId, normalized);

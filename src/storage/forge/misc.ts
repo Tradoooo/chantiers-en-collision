@@ -227,6 +227,12 @@ async function nextSeq(): Promise<number> {
   return row ? num(row.next) : 1;
 }
 
+/** LIMIT bound: TiDB rejects placeholders there — inline a safe integer. */
+function safeLimit(limit: number): number {
+  const n = Math.trunc(Number(limit));
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 1000) : 50;
+}
+
 export function createEventStore(): EventStore {
   return {
     async append(e: EventInput): Promise<EventRecord> {
@@ -238,10 +244,13 @@ export function createEventStore(): EventStore {
     },
 
     async listByWorksite(worksiteId: string, limit?: number): Promise<EventRecord[]> {
+      // TiDB refuses bound parameters in LIMIT (ERROR 1210): inline a
+      // sanitized integer; the WHERE value stays parameterized.
       const rows = limit
-        ? await all<EventRow>`
-            SELECT * FROM event WHERE worksite_id = ${worksiteId}
-            ORDER BY seq DESC LIMIT ${limit}`
+        ? await allText<EventRow>(
+            `SELECT * FROM event WHERE worksite_id = ? ORDER BY seq DESC LIMIT ${safeLimit(limit)}`,
+            [worksiteId],
+          )
         : await all<EventRow>`
             SELECT * FROM event WHERE worksite_id = ${worksiteId} ORDER BY seq DESC`;
       return rows.map(toEvent);
@@ -249,7 +258,10 @@ export function createEventStore(): EventStore {
 
     async recent(limit?: number): Promise<EventRecord[]> {
       const rows = limit
-        ? await all<EventRow>`SELECT * FROM event ORDER BY seq DESC LIMIT ${limit}`
+        ? await allText<EventRow>(
+            `SELECT * FROM event ORDER BY seq DESC LIMIT ${safeLimit(limit)}`,
+            [],
+          )
         : await all<EventRow>`SELECT * FROM event ORDER BY seq DESC`;
       return rows.map(toEvent);
     },

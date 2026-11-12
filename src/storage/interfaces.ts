@@ -38,6 +38,8 @@ export interface RepoStore {
   findById(id: string): Promise<RepoRecord | undefined>;
   findBySlug(projectId: string, slug: string): Promise<RepoRecord | undefined>;
   listByProject(projectId: string): Promise<RepoRecord[]>;
+  /** Every registered repository, whatever its project (status route). */
+  listAll(): Promise<RepoRecord[]>;
   /** Find-or-create by (projectId, slug); applies default zone catalog on create. */
   ensure(projectId: string, slug: string, defaultBranch?: string): Promise<RepoRecord>;
 }

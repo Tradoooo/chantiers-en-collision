@@ -131,6 +131,11 @@ export function createRepoStore(options: RepoStoreOptions): RepoStore {
       return rows.map(toRepo);
     },
 
+    async listAll(): Promise<RepoRecord[]> {
+      const rows = await all<RepoRow>`SELECT * FROM repo ORDER BY project_id, slug`;
+      return rows.map(toRepo);
+    },
+
     async ensure(projectId: string, slug: string, defaultBranch?: string): Promise<RepoRecord> {
       const existing = await this.findBySlug(projectId, slug);
       if (existing) return existing;

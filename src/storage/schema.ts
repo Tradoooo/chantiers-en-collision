@@ -122,7 +122,7 @@ export const SCHEMA_SQL: string[] = [
     probable INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS idx_collision_repo_state ON collision (repo_id, state)`,
-  `CREATE INDEX IF NOT EXISTS idx_collision_pair ON collision (repo_id, worksite_a, worksite_b, zone_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_collision_pair ON collision (repo_id, worksite_a, worksite_b)`,
   `CREATE INDEX IF NOT EXISTS idx_collision_worksite_a ON collision (worksite_a, state)`,
   `CREATE INDEX IF NOT EXISTS idx_collision_worksite_b ON collision (worksite_b, state)`,
 
