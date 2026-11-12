@@ -8,15 +8,36 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <section class="start-here" id="start-here" aria-label="Start here" style="background:#12161d;border-bottom:1px solid #30363d;padding:20px 0;">
+    <div class="wrap">
+      <p class="kicker" style="margin:0 0 6px;">Start here — you are the judge</p>
+      <p style="margin:0 0 10px;font-size:17px;">
+        The site <strong>is</strong> the deployment. Three steps, in this order:
+      </p>
+      <p style="margin:0;font-size:15px;">
+        <strong>1.</strong> <a href="#playground">Play the live verdict</a> — two agents declare, the
+        deployed engine answers &nbsp;·&nbsp;
+        <strong>2.</strong> <a href="#live">Read the real deployment data</a> — live worksites and
+        collisions, refreshed every 10 s &nbsp;·&nbsp;
+        <strong>3.</strong> <a href="#scenario">Replay “Four agents, one repo”</a> — the acceptance
+        scenario, step by step.
+      </p>
+      <p style="margin:8px 0 0;font-size:14px;color:var(--muted);">
+        The pitch in one sentence (FR + EN):
+        <a href="https://github.com/BaptisteFaisy/chantiers-en-collision/blob/main/docs/PITCH.md">docs/PITCH.md</a>
+      </p>
+    </div>
+  </section>
+
   <header class="hero">
     <div class="wrap">
       <p class="kicker">Forge app for Jira · Codegeist 2026 · Apps for Software Teams</p>
       <h1>Chantiers en collision</h1>
       <p class="tagline">
-        Jira knows who is working on which <strong>code</strong>, people and agents alike.
-        Every work in progress has a <strong>footprint</strong> on the repository; every overlap is
-        flagged <strong>before the first line is written</strong> — and the app says what to do:
-        wait, coordinate, split, or run in parallel safely.
+        Jira knows, at every instant, who is working on which part of the code — people and
+        agents alike. Every work in progress has a <strong>footprint</strong> on the repository.
+        Every overlap is flagged <strong>before the first line is written</strong>, and the app
+        says what to do: wait, coordinate, split, or run in parallel safely.
       </p>
       <p class="cta">
         <a class="btn" href="https://github.com/BaptisteFaisy/chantiers-en-collision">GitHub repository</a>
@@ -127,8 +148,8 @@
       <h2>Sprint planning · waves · dispatcher</h2>
       <p class="sub">
         <code>plan-parallel-work</code> turns the sprint into collision-free waves,
-        hinge tickets first and alone. The sprint check lists the risky pairs, and
-        the dispatcher answers "the next clear ticket for this worker".
+        hinge tickets first and alone. <code>list-collisions</code> lists the risky
+        pairs, and the dispatcher answers "the next clear ticket for this worker".
       </p>
       <div id="mount-planning"></div>
     </section>
@@ -177,6 +198,7 @@
       <h2>Read further</h2>
       <ul>
         <li><a href="https://github.com/BaptisteFaisy/chantiers-en-collision">Source code &amp; README</a></li>
+        <li><a href="https://github.com/BaptisteFaisy/chantiers-en-collision/blob/main/docs/INDEX.md">All documentation (docs/INDEX.md)</a></li>
         <li><a href="https://github.com/BaptisteFaisy/chantiers-en-collision/blob/main/docs/SPEC.md">Product spec (docs/SPEC.md)</a></li>
         <li><a href="https://github.com/BaptisteFaisy/chantiers-en-collision/blob/main/docs/JUDGES.md">How to test the app (docs/JUDGES.md)</a></li>
         <li><a href="https://github.com/BaptisteFaisy/chantiers-en-collision/blob/main/skills/avoid-collisions/SKILL.md">The agent protocol (SKILL.md)</a></li>

@@ -5,26 +5,36 @@
  * import of anything but the standard library. The plugin (`chantiers.mjs`)
  * does the I/O and calls these helpers; the unit tests import this file only.
  *
- * The shapes below are the ones the app's `ingest` web trigger expects
- * (docs/PROTOCOL.md §1, docs/WATCHER.md):
- *   POST <BASE>/open   { sessionRef, branch, cwd }
- *   POST <BASE>/touch  { session_id, tool_input: { file_path }, cwd,
- *                        hook_event_name: "PreToolUse" }
- *   POST <BASE>/close  { sessionRef, reason? }
- * The answer is the hook JSON of the app:
- *   { hookSpecificOutput: { hookEventName, additionalContext?,
- *                            permissionDecision: "deny",
- *                            permissionDecisionReason } }
+ * The bodies of the `ingest` web trigger routes (/open, /touch, /close) are
+ * NOT defined here any more: they live in the shared module
+ * `templates/chantiers-lib/payload.mjs` — the one place where the shape of an
+ * emitted emprise is written down — and are re-exported below. The watcher
+ * imports the very same module, so both clients speak one protocol.
+ *
+ * What stays here is what is specific to the plugin:
+ *   - the write tools it watches, and the path they carry,
+ *   - the ticket key carried by a branch name,
+ *   - the reading of the app's answer (the hook JSON of spec §9.3):
+ *     { hookSpecificOutput: { hookEventName, additionalContext?,
+ *                             permissionDecision: "deny",
+ *                             permissionDecisionReason } }
  */
+
+export {
+  TOUCH_EVENT_NAME,
+  buildCloseBody,
+  buildHookHeaders,
+  buildOpenBody,
+  buildTouchBody,
+  defaultSession,
+  joinPaths,
+} from "../chantiers-lib/payload.mjs";
 
 /** Tools that write to the filesystem. `bash` is deliberately absent. */
 export const WRITE_TOOLS = Object.freeze(["write", "edit", "multiedit", "patch"]);
 
 /** Argument keys a write tool may use to carry the file path. */
 export const PATH_KEYS = Object.freeze(["filePath", "file_path", "path"]);
-
-/** The only hook event name the app knows for a file touch. */
-export const TOUCH_EVENT_NAME = "PreToolUse";
 
 /** Ticket key inside a branch name: PROJ-123, ABC-9 … (uppercase only). */
 const TICKET_KEY = /\b([A-Z][A-Z0-9]+-\d+)\b/;
@@ -58,45 +68,6 @@ export function ticketKeyOf(branch) {
   if (typeof branch !== "string" || branch === "") return undefined;
   const match = branch.match(TICKET_KEY);
   return match === null ? undefined : match[1];
-}
-
-/**
- * Body of the `/open` route: the session opens a worksite.
- *
- * @param {string} sessionRef
- * @param {string} branch    current git branch ("unknown" if not a repo)
- * @param {string} cwd       working directory of the session
- */
-export function buildOpenBody(sessionRef, branch, cwd) {
-  return { sessionRef, branch, cwd };
-}
-
-/**
- * Body of the `/touch` route: one file is about to be written.
- *
- * @param {string} sessionRef
- * @param {string} filePath  the path only — never the file content
- * @param {string} cwd
- */
-export function buildTouchBody(sessionRef, filePath, cwd) {
-  return {
-    session_id: sessionRef,
-    tool_input: { file_path: filePath },
-    cwd,
-    hook_event_name: TOUCH_EVENT_NAME,
-  };
-}
-
-/**
- * Body of the `/close` route: the session releases its worksite.
- *
- * @param {string} sessionRef
- * @param {string} [reason]
- */
-export function buildCloseBody(sessionRef, reason) {
-  const body = { sessionRef };
-  if (typeof reason === "string" && reason.trim() !== "") body.reason = reason;
-  return body;
 }
 
 /**
@@ -135,4 +106,3 @@ function safeParse(text) {
     return undefined;
   }
 }
-/* --- PART 1 --- */

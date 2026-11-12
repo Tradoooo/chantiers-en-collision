@@ -8,8 +8,6 @@
  * only paths, session and cwd arrive here.
  */
 
-import { detectCollisions } from "../core/collisions";
-
 import { entriesFromPaths, mergeEntries } from "../core/footprints";
 import { entriesOverlap, classifyPath, normalizePath } from "../core/paths";
 import { renderNoticesForAgent } from "../core/notices";
@@ -24,11 +22,10 @@ import type {
   Worksite,
 } from "../core/types";
 import type { Ctx } from "./ctx";
+import { detectAndVerdict } from "./detect";
 import {
-  buildVerdict,
   ctxForIssue,
   ensureWorksite,
-  loadOpenWorksites,
   logEvent,
   resolveRepo,
   rulesFor,
@@ -43,37 +40,6 @@ export function relativize(path: string, cwd?: string): string {
   let p = path;
   if (cwd && p.startsWith(cwd)) p = p.slice(cwd.length);
   return normalizePath(p);
-}
-
-async function detectAndVerdict(
-  ctx: Ctx,
-  subject: Worksite,
-  repoId: string,
-  deliverNotices: boolean,
-) {
-  const zones = await ctx.stores.zones.listByRepo(repoId);
-  const rules = await rulesFor(ctx);
-  const now = ctx.now();
-  const entries = await ctx.stores.footprints.listByWorksite(subject.id);
-  const others = (await loadOpenWorksites(ctx, repoId)).filter(
-    (o) => o.worksite.id !== subject.id,
-  );
-  const reservations = await ctx.stores.reservations.listActive(repoId, now);
-  const drafts = detectCollisions({ worksite: subject, entries }, others, {
-    zones,
-    reservations,
-    now,
-    hardMode: rules.hardMode,
-  });
-  return buildVerdict(ctx, {
-    subject,
-    drafts,
-    othersById: new Map(others.map((o) => [o.worksite.id, o])),
-    zones,
-    reservations,
-    hardMode: rules.hardMode,
-    deliverNotices,
-  });
 }
 
 /** SessionStart: open the worksite from the branch, inject the neighbours. */
@@ -104,7 +70,11 @@ export async function hookOpen(
       state: "open",
     });
     await logEvent(issueCtx, "hook.open", w.id, { branch: ev.branch });
-    const verdict = await detectAndVerdict(issueCtx, w, repo.id, true);
+    const verdict = await detectAndVerdict(issueCtx, {
+      subject: w,
+      repoId: repo.id,
+      deliverNotices: true,
+    });
     const notices = renderNoticesForAgent(verdict.pendingNotices, "en");
     const neighbours = verdict.collisions
       .map((c) => `${c.neighbor.issueKey} (${c.neighbor.actorLabel}) on ${c.path}`)
@@ -221,7 +191,11 @@ export async function hookTouch(ctx: Ctx, ev: HookTouchEvent): Promise<HookRespo
     }
 
     const fresh = (await issueCtx.stores.worksites.findById(w.id)) ?? w;
-    const verdict = await detectAndVerdict(issueCtx, fresh, w.repoId, true);
+    const verdict = await detectAndVerdict(issueCtx, {
+      subject: fresh,
+      repoId: w.repoId,
+      deliverNotices: true,
+    });
     if (verdict.collisions.length === 0 && verdict.pendingNotices.length === 0) {
       return {};
     }
@@ -303,7 +277,7 @@ export async function ciFootprint(
   await logEvent(issueCtx, "ci.footprint", w.id, { files: files.length, onDefault });
 
   if (!onDefault) {
-    await detectAndVerdict(issueCtx, updated, repo.id, false);
+    await detectAndVerdict(issueCtx, { subject: updated, repoId: repo.id, deliverNotices: false });
   }
   return { worksite: updated, entries: merged.toAdd.length };
 }

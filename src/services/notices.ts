@@ -7,6 +7,7 @@
 
 import { entriesOverlap, classifyPath } from "../core/paths";
 import type { NeighborInfo, Notice } from "../core/types";
+import { fail } from "../core/errors";
 import type { Ctx } from "./ctx";
 import {
   buildNeighborInfo,
@@ -78,12 +79,12 @@ export async function postNotice(
   input: PostNoticeInput,
 ): Promise<{ notice: Notice; recipients: NeighborInfo[] }> {
   const paths = splitPathsBlock(input.paths);
-  if (paths.length === 0) throw new Error("post-notice: at least one path is required");
-  if (input.text.trim() === "") throw new Error("post-notice: text is required");
+  if (paths.length === 0) fail("notice-path-required");
+  if (input.text.trim() === "") fail("notice-text-required");
 
   const { repoIds, authorWorksiteId } = await authorOf(ctx, input);
   if (repoIds.length === 0) {
-    throw new Error(`post-notice: no worksite or repo for ${input.issueKey}`);
+    fail("notice-worksite-unknown", { issueKey: input.issueKey });
   }
 
   const recipients: NeighborInfo[] = [];
@@ -109,6 +110,6 @@ export async function postNotice(
     paths,
     recipients: recipients.length,
   });
-  if (!notice) throw new Error("post-notice: nothing posted");
+  if (!notice) fail("notice-not-found");
   return { notice, recipients };
 }

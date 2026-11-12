@@ -2,7 +2,8 @@ Recorded draft: site/assets/demo.mp4
 
 # Video script — sub­mis­sion screencast (English, < 5 min)
 
-Storyboard: `docs/SPEC.md` §23. The whole film runs on the **real, deployed**
+Storyboard: `docs/SPEC.md` §23. The **one-line pitch** (FR + EN) this film expands lives in
+**[`docs/PITCH.md`](PITCH.md)** — do not reword it here. The whole film runs on the **real, deployed**
 Forge app. Until that site exists, the browser demo at
 **https://baptistefaisy.github.io/chantiers-en-collision/** is a drop-in visual
 for any map / verdict / four-agents shot: it runs the same engine and both the
@@ -110,8 +111,10 @@ agent on its next call.
 
 ## 3:15 – 3:40 · Sprint check before committing
 
-**VISUAL** — Jira sprint → **Check collisions**: the ticket-pair matrix, hinge
-tickets highlighted, and the advised order. One pair shows a D2 (same file).
+**VISUAL** — the demo's **Sprint planning** band (the sprint-check screen itself is not
+deployed — this view is what `list-collisions` + `plan-parallel-work` return): the
+ticket-pair matrix, hinge tickets highlighted, and the advised order. One pair shows a
+D2 (same file).
 
 **NARRATION**
 > "Before we commit to the sprint, one check. The matrix shows every risky pair.

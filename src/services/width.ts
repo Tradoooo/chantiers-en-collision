@@ -18,6 +18,7 @@ import { asStructural, planTicketFor, virtualSides } from "./planning";
 
 export type { ParallelWidthReport, WidthBottleneck } from "../core/types";
 import type { ParallelWidthReport, WidthBottleneck } from "../core/types";
+import { fail } from "../core/errors";
 
 interface Edge {
   a: string;
@@ -38,7 +39,7 @@ async function ticketsFromJql(
   repoSlug: string,
 ): Promise<PlanTicket[]> {
   if (!ctx.jira?.searchIssues) {
-    throw new Error("measure-parallel-width: jql requires the Jira port (ctx.jira.searchIssues)");
+    fail("jira-access-missing");
   }
   const tickets = await ctx.jira.searchIssues(jql);
   const out: PlanTicket[] = [];
@@ -172,7 +173,7 @@ export async function measureParallelWidth(
   let jqlTickets: PlanTicket["issueKey"][] = [];
   if (input.jql) {
     if (!ctx.jira?.searchIssues) {
-      throw new Error("measure-parallel-width: jql requires the Jira port");
+      fail("jira-access-missing");
     }
     jqlTickets = (await ctx.jira.searchIssues(input.jql)).map((t) => t.issueKey);
   }
@@ -216,9 +217,7 @@ async function resolveRepoOrFirst(
   const repos = await ctx.stores.repos.listByProject(pid);
   const repo = repos[0];
   if (!repo) {
-    throw new Error(
-      "no repository registered — pass repoSlug, or a jql whose tickets reveal the project",
-    );
+    fail("repo-not-registered");
   }
   const zones = await ctx.stores.zones.listByRepo(repo.id);
   return { repo, zones };

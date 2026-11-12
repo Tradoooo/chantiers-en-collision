@@ -18,7 +18,7 @@ import type {
 import { classifyPath, entriesOverlap, normalizePath } from "./paths";
 
 /** predicted < declared < observed < attested: a fact beats an intent. */
-const SOURCE_RANK: Record<FootprintSource, number> = {
+export const SOURCE_RANK: Record<FootprintSource, number> = {
   predicted: 0,
   declared: 1,
   observed: 2,
@@ -26,7 +26,7 @@ const SOURCE_RANK: Record<FootprintSource, number> = {
 };
 
 /** edit < create < delete/rename: a destructive intent is never downgraded. */
-const MODE_RANK: Record<FootprintMode, number> = {
+export const MODE_RANK: Record<FootprintMode, number> = {
   edit: 0,
   create: 1,
   delete: 2,
@@ -38,11 +38,16 @@ function isFact(source: FootprintSource): boolean {
   return source === "observed" || source === "attested";
 }
 
-function strongestSource(a: FootprintSource, b: FootprintSource): FootprintSource {
+/**
+ * The strongest of two sources (a fact beats an intent). THE only place the
+ * source ranking is applied: the stores import it, they never redefine it.
+ */
+export function strongestSource(a: FootprintSource, b: FootprintSource): FootprintSource {
   return SOURCE_RANK[b] > SOURCE_RANK[a] ? b : a;
 }
 
-function strongestMode(a: FootprintMode, b: FootprintMode): FootprintMode {
+/** The widest of two modes (a destructive intent is never downgraded). */
+export function strongestMode(a: FootprintMode, b: FootprintMode): FootprintMode {
   return MODE_RANK[b] > MODE_RANK[a] ? b : a;
 }
 

@@ -126,16 +126,21 @@ async function upsertCollision(draft: CollisionDraft): Promise<Collision> {
   const zoneId = draft.zoneId ?? "";
   const detectedAt = draft.detectedAt ?? new Date().toISOString();
   const existing = await findByKey(draft.repoId, worksiteA, worksiteB, zoneId);
-  // The draft wins when it states a state; otherwise a recorded
-  // resolution is preserved (never silently un-resolved).
-  const state: CollisionState = draft.state ?? (existing ? toCollision(existing).state : "open");
+  const prior = existing ? toCollision(existing) : undefined;
+  // The draft wins when it states a state; otherwise a recorded resolution is
+  // preserved (never silently un-resolved). Id, detectedAt and the resolution
+  // fields are kept from the first detection — parity with the memory store.
+  const state: CollisionState = draft.state ?? (prior?.state ?? "open");
   const collision: Collision = {
     ...draft,
-    id: existing ? str(existing.id) : newId("col"),
+    id: prior?.id ?? newId("col"),
     worksiteA,
     worksiteB,
     state,
-    detectedAt: existing ? str(existing.detected_at) : detectedAt,
+    detectedAt: prior?.detectedAt ?? detectedAt,
+    resolution: draft.resolution ?? prior?.resolution,
+    resolvedBy: draft.resolvedBy ?? prior?.resolvedBy,
+    reason: draft.reason ?? prior?.reason,
   };
   await upsert("collision", collision.id, COLLISION_COLUMNS, collisionValues(collision));
   return collision;
@@ -188,13 +193,23 @@ async function resolveCollision(
   resolvedBy: string,
   reason?: string,
 ): Promise<Collision | undefined> {
-  const affected = await run`
+  const existing = await findCollisionById(id);
+  if (!existing) return undefined;
+  // memory store parity: an absent argument PRESERVES the recorded value —
+  // resolution and reason are never silently cleared.
+  const merged: Collision = {
+    ...existing,
+    state: "resolved",
+    resolvedBy,
+    resolution: resolution ?? existing.resolution,
+    reason: reason ?? existing.reason,
+  };
+  await run`
     UPDATE collision
-    SET state = 'resolved', resolution = ${resolution ?? ""},
-        resolved_by = ${resolvedBy}, reason = ${reason ?? ""}
+    SET state = 'resolved', resolution = ${merged.resolution ?? ""},
+        resolved_by = ${resolvedBy}, reason = ${merged.reason ?? ""}
     WHERE id = ${id}`;
-  if (affected <= 0) return undefined;
-  return findCollisionById(id);
+  return merged;
 }
 
 async function countCollisionsByPhase(

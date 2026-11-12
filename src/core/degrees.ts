@@ -83,20 +83,41 @@ function rawDegreeOf(input: DegreeInput): Degree {
   return 1;
 }
 
-/** Apply the modulations of spec §7 to the raw degree. */
-export function computeDegree(input: DegreeInput): DegreeResult {
-  const raw = rawDegreeOf(input);
+/**
+ * The modulations of spec §7: hotspot −1, dormant neighbour −1, prediction-only
+ * capped to D1 (probable). ONE implementation — the file clash (computeDegree)
+ * and the named zone (sharedZoneDegree in core/collisions) share it, so the
+ * two degrees can never drift apart.
+ */
+export function applyModulations(
+  raw: Degree,
+  zone: Zone | undefined,
+  neighborDormant: boolean,
+  predictedOnly: boolean,
+): { degree: Degree; probable: boolean } {
   let degree = raw;
-  if (input.zone !== undefined && input.zone.nature === "hotspot" && degree > 0) {
+  if (zone !== undefined && zone.nature === "hotspot" && degree > 0) {
     degree = clampDegree(degree - 1);
   }
-  if (input.neighborDormant && degree > 0) {
+  if (neighborDormant && degree > 0) {
     degree = clampDegree(degree - 1);
   }
-  const probable = input.predictedOnly;
+  const probable = predictedOnly;
   if (probable && degree > 1) {
     degree = 1;
   }
+  return { degree, probable };
+}
+
+/** Apply the modulations of spec §7 to the raw degree. */
+export function computeDegree(input: DegreeInput): DegreeResult {
+  const raw = rawDegreeOf(input);
+  const { degree, probable } = applyModulations(
+    raw,
+    input.zone,
+    input.neighborDormant,
+    input.predictedOnly,
+  );
   return { degree, rawDegree: raw, probable };
 }
 

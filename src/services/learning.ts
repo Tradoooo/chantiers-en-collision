@@ -17,6 +17,7 @@ import type { CollisionStats, Worksite, Zone, ZoneNature } from "../core/types";
 import type { Ctx } from "./ctx";
 import { collisionStats } from "./planning";
 import { resolveRepo } from "./shared";
+import { fail } from "../core/errors";
 
 /** A directory whose overlaps never conflict → suggest hotspot. */
 export const HOTSPOT_MIN_COLLISIONS = 3;
@@ -167,7 +168,7 @@ export async function learningReport(
 async function firstProjectRepo(ctx: Ctx) {
   const repos = await ctx.stores.repos.listByProject(ctx.projectId);
   const repo = repos[0];
-  if (!repo) throw new Error("no repository registered for this project yet");
+  if (!repo) fail("repo-not-registered");
   const zones = await ctx.stores.zones.listByRepo(repo.id);
   return { repo, zones };
 }

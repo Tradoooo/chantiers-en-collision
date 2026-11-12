@@ -17,6 +17,7 @@
  */
 
 import { classifyPath, entriesOverlap, parentDirs } from "../../core/paths";
+import { strongestMode, strongestSource } from "../../core/footprints";
 import type {
   FootprintCoverage,
   FootprintEntry,
@@ -34,22 +35,6 @@ import { repoIdsOfWorksites } from "./worksites";
 const OVERLAP_SCAN_LIMIT = 2000;
 /** Upper bound of `pattern` entries considered per repo. */
 const PATTERN_SCAN_LIMIT = 500;
-
-/** Strongest evidence wins: attested > observed > declared > predicted. */
-const SOURCE_RANK: Record<FootprintSource, number> = {
-  predicted: 0,
-  declared: 1,
-  observed: 2,
-  attested: 3,
-};
-
-/** Widest mode wins: a deletion/rename covers an edit or a creation. */
-const MODE_RANK: Record<FootprintMode, number> = {
-  edit: 0,
-  create: 1,
-  rename: 2,
-  delete: 3,
-};
 
 interface FootprintRow {
   id: string;
@@ -79,11 +64,11 @@ function toEntry(row: FootprintRow): FootprintEntry {
 }
 
 function widerSource(a: FootprintSource, b: FootprintSource): FootprintSource {
-  return SOURCE_RANK[a] >= SOURCE_RANK[b] ? a : b;
+  return strongestSource(a, b);
 }
 
 function widerMode(a: FootprintMode, b: FootprintMode): FootprintMode {
-  return MODE_RANK[a] >= MODE_RANK[b] ? a : b;
+  return strongestMode(a, b);
 }
 
 /** Merge a stored row with a new observation of the same (worksite, path). */
@@ -94,7 +79,7 @@ function mergeEntry(stored: FootprintEntry, input: FootprintEntryInput, at: stri
     kind: input.kind,
     source: widerSource(stored.source, input.source),
     mode: widerMode(stored.mode, input.mode),
-    firstAt: stored.firstAt <= at ? stored.firstAt : at,
+    firstAt: stored.firstAt,
     lastAt: stored.lastAt >= at ? stored.lastAt : at,
   };
   if (stored.declaredMismatch || input.declaredMismatch) merged.declaredMismatch = true;

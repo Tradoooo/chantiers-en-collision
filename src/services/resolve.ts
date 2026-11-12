@@ -14,6 +14,7 @@ import type {
 } from "../core/types";
 import type { Ctx } from "./ctx";
 import { logEvent, rulesFor } from "./shared";
+import { fail } from "../core/errors";
 
 export interface ResolveInput {
   collisionId: string;
@@ -117,17 +118,17 @@ export async function resolveCollision(
   input: ResolveInput,
 ): Promise<ResolutionOutcome> {
   const collision = await ctx.stores.collisions.findById(input.collisionId);
-  if (!collision) throw new Error(`resolve-collision: unknown collision ${input.collisionId}`);
+  if (!collision) fail("unknown-collision", { collisionId: input.collisionId });
   if (collision.state !== "open") {
     return { collisionId: collision.id, choice: input.choice, recorded: false };
   }
   if (input.choice === "override" && !input.reason) {
-    throw new Error("resolve-collision: override requires a reason");
+    fail("override-requires-reason");
   }
 
   const wa = await ctx.stores.worksites.findById(collision.worksiteA);
   const wb = await ctx.stores.worksites.findById(collision.worksiteB);
-  if (!wa || !wb) throw new Error("resolve-collision: worksite of the collision is gone");
+  if (!wa || !wb) fail("collision-worksite-gone");
 
   const outcome: ResolutionOutcome = {
     collisionId: collision.id,

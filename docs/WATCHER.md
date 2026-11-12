@@ -34,9 +34,15 @@ the repo travels in the `X-Chantier-Repo` header. `.git`, `node_modules`,
 
 ## Install
 
+The watcher imports the shared payload builder (`templates/chantiers-lib/payload.mjs` —
+the one place the shape of an emprise is written down, also used by the OpenCode
+plugin): keep the two files in the same layout.
+
 ```bash
-cp templates/watcher/chantier-watch.mjs ~/bin/chantier-watch
-chmod +x ~/bin/chantier-watch
+mkdir -p ~/bin/chantiers/chantiers-lib
+cp templates/watcher/chantier-watch.mjs ~/bin/chantiers/chantier-watch
+cp templates/chantiers-lib/payload.mjs   ~/bin/chantiers/chantiers-lib/payload.mjs
+chmod +x ~/bin/chantiers/chantier-watch
 export CHANTIER_URL="https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ"
 export CHANTIER_TOKEN="<personal token>"   # stays on your machine, never committed
 chantier-watch                             # run inside the repo worktree

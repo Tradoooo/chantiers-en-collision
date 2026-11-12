@@ -35,8 +35,7 @@ jobs:
           persist-credentials: false
           clean: false
       - uses: ./.github/actions/npm-cache
-      - run: npm run lint
-      - run: npm run typecheck
+      - run: node scripts/verify.mjs --only lint --only typecheck
 
   test:
     name: test
@@ -49,7 +48,7 @@ jobs:
           persist-credentials: false
           clean: false
       - uses: ./.github/actions/npm-cache
-      - run: npm run test
+      - run: node scripts/verify.mjs --only test
 
   manifest:
     name: manifest
@@ -62,7 +61,7 @@ jobs:
           persist-credentials: false
           clean: false
       - uses: ./.github/actions/npm-cache
-      - run: npm run check:manifest
+      - run: node scripts/verify.mjs --only check:manifest --only check:storage
 
   site:
     name: site
@@ -78,4 +77,4 @@ jobs:
       # Builds the GitHub Pages demo bundle and replays the engine headlessly
       # (four-agents scenario + playground verdicts) — what the judges click
       # is what CI runs.
-      - run: npm run check:site
+      - run: node scripts/verify.mjs --only check:site

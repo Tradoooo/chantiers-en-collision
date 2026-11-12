@@ -156,19 +156,17 @@ by external MCP clients (Rovo MCP is served over OAuth 2.1):
 > The in-product path quoted in `docs/JUDGES.md` ("Jira admin → apps → Chantiers
 > en collision → Rovo MCP / external access") refers to this same toggle.
 
-### Generate the tokens (where, in the UI)
+### Generate the tokens
 
-The token screens are Forge UI modules, so they only exist **after** `forge
-install`.
+Tokens are minted by the **`create-hook-token`** MCP tool (ask the *Site foreman*
+agent in Rovo Chat, or call it from any Rovo MCP client) — the personal-settings
+screen is parked (Custom UI only), so there is no in-product token button yet.
 
-- **Personal token** — Jira → **personal settings** → **My worksites** → *Hook
-  token* → **Generate token**. Rendered by `src/ui/personalSettings.tsx`; the
-  clear value is shown **once**, and the app stores only its sha256 fingerprint
-  (`hook_token.token_hash`). Use this token for `/open`, `/touch`, `/close` and
-  also for `/ci/*` if you have nothing else.
-- **Project token** — Jira → **project settings** → **Worksites** → *Hook & CI*
-  tab (per `docs/JUDGES.md`). Restricted to `/ci/footprint` and `/ci/conflict`
-  only. Use this for CI (`templates/ci/*`).
+- **Personal token** — scope `personal`. Shown **once**; the app stores only its
+  sha256 fingerprint (`hook_token.token_hash`). Use it for `/open`, `/touch`,
+  `/close` and also for `/ci/*` if you have nothing else.
+- **Project token** — scope `project`. Restricted to `/ci/footprint` and
+  `/ci/conflict` only. Use this for CI (`templates/ci/*`).
 
 ### GitHub secrets + smoke workflow
 
@@ -200,8 +198,10 @@ après le premier forge deploy, voir docs/DEPLOY.md)"* and exits 0 (see
 After the deploy, walk each path once against the **real** site and update the
 placeholders:
 
-1. **In Jira alone.** Simulation console scenario *Four agents*, worksite map,
-   issue panel, sprint check, Rovo agent. Nothing to update — all in-product.
+1. **In Jira alone.** Worksite map, issue panel, Rovo agent. The scenario *Four
+   agents* replays on the public site; the sprint-check screen is not deployed —
+   use `list-collisions` / `plan-parallel-work` instead. Nothing to update — all
+   in-product.
 2. **With a MCP client.** Requires the EAP flag + external exposure above. No
    URL to write; the client connects to `chantiers-mcp` via OAuth.
 3. **With the hook.** Clone the public example repo `acme/billing-demo`. Update

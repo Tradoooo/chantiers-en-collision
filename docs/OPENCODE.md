@@ -32,10 +32,14 @@ swallowed, the agent continues.
 
 ## Install (short)
 
+The plugin re-exports the shared payload builder (`templates/chantiers-lib/payload.mjs`,
+the same one the watcher uses): copy the three files, keep the layout.
+
 ```bash
-mkdir -p .opencode/chantiers
+mkdir -p .opencode/chantiers .opencode/chantiers-lib
 cp templates/opencode/chantiers.mjs     .opencode/chantiers/index.js
 cp templates/opencode/chantiers-lib.mjs .opencode/chantiers/chantiers-lib.mjs
+cp templates/chantiers-lib/payload.mjs   .opencode/chantiers-lib/payload.mjs
 export CHANTIER_URL="https://<host>.webtrigger.atlassian.app/public/<id>"
 export CHANTIER_TOKEN="<personal token>"
 export CHANTIER_REPO="acme/billing"

@@ -5,7 +5,6 @@
  * collisions → assemble the verdict → log. Verdict target: < 2 s.
  */
 
-import { detectCollisions } from "../core/collisions";
 import { entriesFromPaths, mergeEntries } from "../core/footprints";
 import { formatVerdictText, verdictKindFor } from "../core/verdict";
 import {
@@ -15,13 +14,11 @@ import {
   type Locale,
   type Verdict,
   type Worksite,
-  type Zone,
 } from "../core/types";
 import type { Ctx } from "./ctx";
+import { detectAndVerdict } from "./detect";
 import {
-  buildVerdict,
   ensureWorksite,
-  loadOpenWorksites,
   logEvent,
   resolveRepo,
   rulesFor,
@@ -59,35 +56,6 @@ async function freezeVerdict(
     text: `${text}\nfreeze suggested: ${count} paths in one declaration — announce a freeze instead`,
     freezeSuggestion: { paths: count },
   };
-}
-
-/** Detection + verdict assembly shared by declareFootprint and checkZone. */
-async function detectForSubject(
-  ctx: Ctx,
-  subject: { worksite: Worksite; entries: FootprintEntry[] },
-  repoId: string,
-  zones: Zone[],
-  hardMode: boolean,
-  locale: Locale,
-  opts: { deliverNotices: boolean; persist: boolean },
-): Promise<Verdict> {
-  const now = ctx.now();
-  const others = (await loadOpenWorksites(ctx, repoId)).filter(
-    (o) => o.worksite.id !== subject.worksite.id,
-  );
-  const reservations = await ctx.stores.reservations.listActive(repoId, now);
-  const drafts = detectCollisions(subject, others, { zones, reservations, now, hardMode });
-  return buildVerdict(ctx, {
-    subject: subject.worksite,
-    drafts,
-    othersById: new Map(others.map((o) => [o.worksite.id, o])),
-    zones,
-    reservations,
-    hardMode,
-    locale,
-    deliverNotices: opts.deliverNotices,
-    persist: opts.persist,
-  });
 }
 
 /** Store the declared entries (fact beats intent) and log the gaps. */
@@ -136,15 +104,16 @@ export async function declareFootprint(ctx: Ctx, input: DeclareInput): Promise<V
 
   const entries = await ctx.stores.footprints.listByWorksite(w.id);
   const fresh = (await ctx.stores.worksites.findById(w.id)) ?? w;
-  const verdict = await detectForSubject(
-    ctx,
-    { worksite: fresh, entries },
-    repo.id,
+  const verdict = await detectAndVerdict(ctx, {
+    subject: fresh,
+    repoId: repo.id,
     zones,
-    rules.hardMode,
+    hardMode: rules.hardMode,
     locale,
-    { deliverNotices: true, persist: true },
-  );
+    entries,
+    deliverNotices: true,
+    persist: true,
+  });
 
   if (ctx.jira?.setCollisionsField) {
     const worst = verdict.collisions[0];
@@ -193,13 +162,14 @@ export async function checkZone(ctx: Ctx, input: CheckZoneInput): Promise<Verdic
     now,
   ).map((e) => ({ ...e, firstAt: now, lastAt: now }));
 
-  return detectForSubject(
-    ctx,
-    { worksite: probe, entries },
-    repo.id,
+  return detectAndVerdict(ctx, {
+    subject: probe,
+    repoId: repo.id,
     zones,
-    rules.hardMode,
+    hardMode: rules.hardMode,
     locale,
-    { deliverNotices: false, persist: false },
-  );
+    entries,
+    deliverNotices: false,
+    persist: false,
+  });
 }

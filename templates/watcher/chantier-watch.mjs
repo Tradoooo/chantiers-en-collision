@@ -24,15 +24,21 @@
  */
 
 import { execFileSync, spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { mkdtempSync, readdirSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { hostname, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  TOUCH_EVENT_NAME,
+  buildCloseBody,
+  buildHookHeaders,
+  buildOpenBody,
+  buildTouchBody,
+  defaultSession,
+} from "../chantiers-lib/payload.mjs";
 
 const IGNORED_SEGMENTS = new Set([".git", "node_modules", "dist", ".chantier"]);
-const TOUCH_EVENT = "PreToolUse";
 const FETCH_MS = 3000;
 const CLOSE_MS = 1500;
 
@@ -41,10 +47,6 @@ const CLOSE_MS = 1500;
 function envText(name, fallback = "") {
   const v = process.env[name];
   return v === undefined ? fallback : v.trim();
-}
-
-function defaultSession() {
-  return `${hostname()}-${process.pid}-${randomBytes(4).toString("hex")}`;
 }
 
 function gitOut(cwd, args) {
@@ -89,11 +91,7 @@ async function post(cfg, route, body, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const headers = {
-      authorization: `Bearer ${cfg.token}`,
-      "content-type": "application/json",
-    };
-    if (cfg.repo) headers["x-chantier-repo"] = cfg.repo;
+    const headers = buildHookHeaders(cfg.token, cfg.repo);
     const res = await fetch(`${cfg.base}/${route}`, {
       method: "POST",
       headers,
@@ -197,30 +195,22 @@ function startWatcher(root, onFile) {
 /* ---------------------------------------------------- the three routes -- */
 
 function touch(cfg, file) {
-  const body = {
-    session_id: cfg.session,
-    tool_input: { file_path: file },
-    cwd: cfg.watchDir,
-    hook_event_name: TOUCH_EVENT,
-  };
+  const body = buildTouchBody(cfg.session, file, cfg.watchDir);
   return post(cfg, "touch", body, FETCH_MS).then((json) => {
     if (json !== undefined) report(`touch ${relative(cfg.watchDir, file)}`, json);
   });
 }
 
 function open(cfg) {
-  const body = {
-    sessionRef: cfg.session,
-    branch: gitOut(cfg.watchDir, ["rev-parse", "--abbrev-ref", "HEAD"]) || "unknown",
-    cwd: cfg.watchDir,
-  };
+  const branch = gitOut(cfg.watchDir, ["rev-parse", "--abbrev-ref", "HEAD"]) || "unknown";
+  const body = buildOpenBody(cfg.session, branch, cfg.watchDir);
   return post(cfg, "open", body, FETCH_MS).then((json) => {
-    if (json !== undefined) report(`open ${body.branch}`, json);
+    if (json !== undefined) report(`open ${branch}`, json);
   });
 }
 
 function close(cfg, reason) {
-  return post(cfg, "close", { sessionRef: cfg.session, reason }, CLOSE_MS);
+  return post(cfg, "close", buildCloseBody(cfg.session, reason), CLOSE_MS);
 }
 
 /* ---------------------------------------------------------- main -------- */
@@ -308,7 +298,7 @@ function startTestServer() {
       }
       requests.push({ route: (req.url ?? "").split("?")[0].replace(/\/+$/, ""), headers: req.headers, body });
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ hookSpecificOutput: { hookEventName: TOUCH_EVENT, additionalContext: "selftest context" } }));
+      res.end(JSON.stringify({ hookSpecificOutput: { hookEventName: TOUCH_EVENT_NAME, additionalContext: "selftest context" } }));
     });
   });
   return { requests, server };

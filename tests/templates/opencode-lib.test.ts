@@ -2,9 +2,10 @@
  * tests/templates/opencode-lib.test.ts — unit tests for the pure helper
  * library of the OpenCode plugin (`templates/opencode/chantiers-lib.mjs`).
  *
- * No network, no OpenCode runtime: the library is pure, so the whole HTTP
- * contract (the exact body shapes of /open, /touch and /close, and the parsing
- * of the app's answer) is asserted here.
+ * No network, no OpenCode runtime: the library is pure, so the parsing of the
+ * app's answer is asserted here. The exact body shapes of /open, /touch and
+ * /close are asserted once, in `tests/templates/payload.test.ts`, where the
+ * shared module that builds them lives.
  *
  * The library is an ES module; the test file is compiled as CommonJS by the
  * repository (`module: node16`), so the import is dynamic — the recommended
@@ -75,37 +76,19 @@ describe("ticketKeyOf", () => {
   });
 });
 
-describe("body builders — the exact web-trigger contract", () => {
-  it("builds the /open body", () => {
-    expect(lib.buildOpenBody("sess-1", "feature/PROJ-123-x", "/repo")).toEqual({
-      sessionRef: "sess-1",
-      branch: "feature/PROJ-123-x",
-      cwd: "/repo",
-    });
-  });
-
-  it("builds the /touch body — nothing but the path", () => {
-    const body = lib.buildTouchBody("sess-1", "/repo/src/a.ts", "/repo");
-    expect(body).toEqual({
-      session_id: "sess-1",
-      tool_input: { file_path: "/repo/src/a.ts" },
-      cwd: "/repo",
-      hook_event_name: "PreToolUse",
-    });
-    expect(Object.keys(body).sort()).toEqual(["cwd", "hook_event_name", "session_id", "tool_input"]);
-    expect(Object.keys(body.tool_input)).toEqual(["file_path"]);
+describe("body builders — re-exported from the shared core", () => {
+  // The shapes of /open, /touch and /close are built by the shared module
+  // `templates/chantiers-lib/payload.mjs` — the watcher, the plugin and the
+  // CI templates all use it. They are asserted ONCE, in
+  // `tests/templates/payload.test.ts`; here we only check that the plugin
+  // still hands them over.
+  it("exposes the shared payload builders", () => {
+    expect(typeof lib.buildOpenBody).toBe("function");
+    expect(typeof lib.buildTouchBody).toBe("function");
+    expect(typeof lib.buildCloseBody).toBe("function");
+    expect(typeof lib.buildHookHeaders).toBe("function");
+    expect(typeof lib.defaultSession).toBe("function");
     expect(lib.TOUCH_EVENT_NAME).toBe("PreToolUse");
-  });
-
-  it("builds the /close body", () => {
-    expect(lib.buildCloseBody("sess-1", "opencode-plugin-unload")).toEqual({
-      sessionRef: "sess-1",
-      reason: "opencode-plugin-unload",
-    });
-  });
-
-  it("omits an empty close reason", () => {
-    expect(lib.buildCloseBody("sess-1")).toEqual({ sessionRef: "sess-1" });
   });
 });
 

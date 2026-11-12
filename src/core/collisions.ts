@@ -4,7 +4,7 @@
  * representative path recorded, normalized worksiteA < worksiteB ordering.
  */
 
-import { computeDegree, hasThirdPartyReservation } from "./degrees";
+import { applyModulations, computeDegree, hasThirdPartyReservation } from "./degrees";
 import { classifyPath, entriesOverlap, literalPrefix, matchesGlob, normalizePath } from "./paths";
 import { isFrozen, zoneForPath } from "./zones";
 import type {
@@ -169,11 +169,8 @@ function sharedZoneDegree(
   let raw: Degree = 0;
   if (zone.nature === "exclusive") raw = 4;
   else if (zone.nature === "frozen" && isFrozen(zone, opts.now)) raw = 4;
-  let degree: Degree = raw;
-  if (zone.nature === "hotspot" && degree > 0) degree = (degree - 1) as Degree;
-  if (neighborDormant && degree > 0) degree = (degree - 1) as Degree;
-  const probable = predictedOnly;
-  if (probable && degree > 1) degree = 1;
+  // The modulations are the shared ones (core/degrees.applyModulations).
+  const { degree, probable } = applyModulations(raw, zone, neighborDormant, predictedOnly);
   return { degree, raw, probable };
 }
 

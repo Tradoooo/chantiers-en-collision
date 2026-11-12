@@ -102,6 +102,7 @@ export const SCHEMA_SQL: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_footprint_repo_path ON footprint (repo_id, path)`,
   `CREATE INDEX IF NOT EXISTS idx_footprint_worksite ON footprint (worksite_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_footprint_worksite_path ON footprint (worksite_id, path)`,
 
   /* --------------------------- collision --------------------------- */
   `CREATE TABLE IF NOT EXISTS collision (
@@ -125,6 +126,12 @@ export const SCHEMA_SQL: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_collision_pair ON collision (repo_id, worksite_a, worksite_b)`,
   `CREATE INDEX IF NOT EXISTS idx_collision_worksite_a ON collision (worksite_a, state)`,
   `CREATE INDEX IF NOT EXISTS idx_collision_worksite_b ON collision (worksite_b, state)`,
+  // NOTE: the contract "one collision per (repo, worksite_a, worksite_b, zone)"
+  // is enforced by the code (memory store keyed, forge upsert by key). A
+  // UNIQUE index on those 4 columns would exceed the TiDB 3072-byte index
+  // limit (4 × VARCHAR(255) × utf8mb4 = 4080 B) — deferred until the id
+  // columns are shortened. The parity guard (scripts/check-storage.mjs) keeps
+  // the two stores honest in the meantime.
 
   /* -------------------------- reservation -------------------------- */
   `CREATE TABLE IF NOT EXISTS reservation (

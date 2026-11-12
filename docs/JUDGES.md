@@ -1,18 +1,25 @@
 # Judge guide
 
-## Route 0 — the public site, wired to the running deployment
+## Route 0 — start here: the site
 
-<https://baptistefaisy.github.io/chantiers-en-collision/> — open it and you are looking at the
-**deployed** Forge app, not a mock: the *live worksites* band reads `/demo/state` (the real
-worksites of `acme/billing` in Forge SQL, refreshed every 10 s) and the playground calls
-`/demo/verdict`, so the verdict you get is the one the running engine computed against those
-live worksites — D2 collisions against PROJ-1/PROJ-10/PROJ-12 as they really are. The band
-*Live proof* shows the deployment's own counters (worksites, collisions, events).
+**<https://baptistefaisy.github.io/chantiers-en-collision/>** — the single entry point for a judge,
+no install, no Jira, nothing to run. The page is the **deployed** Forge app, not a mock:
 
-If the deployment is asleep the page says so and falls back to the same engine running locally.
+- **Playground** — two agents declare footprints and you read the verdict (presets: same file →
+  D2 caution, two migrations → D4 wait, hotspot translations → lowered degree).
+- **Live worksites** — the band reads `/demo/state`: the real worksites of `acme/billing` in
+  Forge SQL, refreshed every 10 s. The playground calls `/demo/verdict`, so the verdict you get is
+  the one the running engine computed against those worksites — D2 collisions against
+  PROJ-1/PROJ-10/PROJ-12 as they really are.
+- **Scenario** — the eleven-step “Four agents” story replays live, with every expectation checked.
+- **Live proof** — the deployment's own counters (worksites, collisions, events).
+
+The bundle is the real TypeScript engine (services + core + in-memory stores) via esbuild, and it
+is verified in CI (`site` job, `scripts/check-site-bundle.mjs`) — what you click is what the tests
+run. If the deployment is asleep the page says so and falls back to the same engine locally.
 
 
-## Route −1 — the app is ALREADY deployed with real data
+### Behind the site: the app is ALREADY deployed with real data
 
 Development environment on `one-atlas-cndz.atlassian.net`, app id `2ef208cc-6621-42a7-8557-5ce5ab3f6882`:
 project **PROJ** with 8 real tickets (components billing/database/auth/i18n, priorities, due dates),
@@ -24,26 +31,17 @@ verified against it (real D2 verdicts printed in the terminal). Re-seed anytime 
 (encrypted Forge variable): creating PROJ-8 triggered a planned worksite with a predicted footprint.
 
 
-## Route 0 — in the browser, nothing to install
+## Four test paths
 
-**<https://baptistefaisy.github.io/chantiers-en-collision/>** — the GitHub Pages demo bundles the
-real TypeScript engine (services + core + in-memory stores) via esbuild. Playground: two agents
-declare footprints, verdicts appear (try the presets: same file → D2 caution, two migrations →
-D4 wait, hotspot translations → lowered degree). Scenario: the eleven-step “Four agents” story
-replays live with every expectation checked. The same bundle is verified in CI (`site` job,
-`scripts/check-site-bundle.mjs`), so what you click is what the tests run.
-
-
-Four test paths, in increasing order of setup. **The first needs nothing but a browser and a Jira
-site**; the fourth needs nothing but `curl`. The demo site ships without a code repository, which
-is why path 1 exists (spec §24).
+In increasing order of setup. **The first needs nothing but a browser**; the fourth needs nothing
+but `curl`. The demo site ships without a code repository, which is why path 1 exists (spec §24).
 
 ## Before you start — two values you will need
 
 | Value | Where |
 |---|---|
-| Ingest base URL `https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ` | Jira → project settings → **Worksites** → *Hook & CI* tab (copy button). |
-| Personal token | Jira → personal settings → **My worksites** → *Generate token*. Shown **once**; the app only keeps its sha256 fingerprint. |
+| Ingest base URL `https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ` | the deployment's web trigger, copied from the `Hook & CI` tab of the project settings page. |
+| Personal token | the MCP tool **`create-hook-token`** — ask the **Site foreman** agent in Rovo Chat (or call it from any Rovo MCP client). Shown **once**; the app only keeps its sha256 fingerprint. |
 
 Every request below uses `Authorization: Bearer <token>`. Export both once:
 
@@ -52,17 +50,17 @@ export CHANTIER_URL="https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atl
 export CHANTIER_TOKEN="<your personal token>"
 ```
 
-The project token (also in project settings) is restricted to `/ci/footprint` and `/ci/conflict`.
-Either token works for path 4.
+`create-hook-token` mints both scopes: the **personal** token works everywhere; the **project**
+token is restricted to `/ci/footprint` and `/ci/conflict`. Either token works for path 4.
 
 ---
 
-## Path 1 — In Jira alone (no repository, no client)
+## Path 1 — The browser and Jira alone (no repository, no client)
 
 **1.1 Simulation console, scenario "Four agents".**
-Open the app, go to the **Simulation console**, pick **Four agents, one repo** and run it. One
-pilot drives four agent sessions on `acme/billing`. The scenario replays against in-memory stores
-with a controllable clock: no repository, no Jira data, no network.
+On the site (Route 0), the **“Four agents, one repo”** scenario replays live with every expectation
+checked. One pilot drives four agent sessions on `acme/billing`. It runs against the in-memory
+stores with a controllable clock: no repository, no Jira data, no network.
 
 | Step | What the scenario does | What you should see |
 |---|---|---|
@@ -83,8 +81,10 @@ who is where, since when, at which degree — plus the collision graph and the p
 (predicted / declared / observed / attested), neighbours, collisions with their six ways out,
 notices sent and received, and the "I'm working on it" button.
 
-**1.4 Sprint check.** Sprint → *Check collisions*: the matrix of the sprint's tickets, the hinge
-tickets (those crossing many others) and the advised order.
+**1.4 Collision listing (MCP tool `list-collisions`).** The sprint-check screen is not deployed
+(it needs Custom UI). The same read is available anywhere through the `list-collisions` MCP tool:
+give it a JQL query and it returns the colliding pairs with their degree and state — the hinge
+tickets and the advised order come from `plan-parallel-work` with the same JQL.
 
 **1.5 Rovo agent.** In Rovo Chat, ask the **Site foreman**: *"Who is touching billing right
 now?"*, *"Can I run PROJ-101 and PROJ-102 in parallel?"*, *"Plan sprint 42 for four agents."* It
@@ -226,7 +226,7 @@ curl -sS -X POST "$CHANTIER_URL/ci/footprint" \
 
 What you should see:
 
-- a worksite for **PROJ-120** appears in the project's worksite map and in *My worksites*, with
+- a worksite for **PROJ-120** appears in the project's worksite map, with
   a footprint tagged **attested** (3 entries);
 - `src/billing/invoice.ts` now overlaps PROJ-88 / PROJ-101 → a collision appears on both panels,
   and `who-touches` on that path lists the new worksite;

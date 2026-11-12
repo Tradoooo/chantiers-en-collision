@@ -30,8 +30,6 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { randomBytes } from "node:crypto";
-import { hostname } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import * as lib from "./chantiers-lib.mjs";
 
@@ -67,11 +65,6 @@ function optionText(options, name) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/** Default session reference: stable for the life of the process. */
-function defaultSession() {
-  return `oc-${hostname()}-${process.pid}-${randomBytes(3).toString("hex")}`;
-}
-
 /** The current git branch of `cwd`, or "unknown" outside a repository. */
 function gitBranch(cwd) {
   try {
@@ -96,7 +89,8 @@ function readConfig(ctx) {
   const base = (envText("CHANTIER_URL") || optionText(options, "url")).replace(/\/+$/, "");
   const token = envText("CHANTIER_TOKEN") || optionText(options, "token");
   const repo = envText("CHANTIER_REPO") || optionText(options, "repo");
-  const session = envText("CHANTIER_SESSION") || optionText(options, "session") || defaultSession();
+  const session =
+    envText("CHANTIER_SESSION") || optionText(options, "session") || lib.defaultSession("oc-");
   return { base, token, repo, session, cwd };
 }
 
@@ -110,11 +104,7 @@ async function post(cfg, route, body, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const headers = {
-      authorization: `Bearer ${cfg.token}`,
-      "content-type": "application/json",
-    };
-    if (cfg.repo !== "") headers["x-chantier-repo"] = cfg.repo;
+    const headers = lib.buildHookHeaders(cfg.token, cfg.repo);
     const res = await fetch(`${cfg.base}/${route}`, {
       method: "POST",
       headers,

@@ -22,10 +22,11 @@ import type {
 } from "../core/types";
 import type { Ctx } from "./ctx";
 import { loadOpenWorksites, projectIdOfIssueKey, resolveRepo } from "./shared";
+import { fail } from "../core/errors";
 
 async function search(ctx: Ctx, jql: string): Promise<TicketMeta[]> {
   if (!ctx.jira?.searchIssues) {
-    throw new Error("planning tools require Jira access (ctx.jira.searchIssues is missing)");
+    fail("jira-access-missing");
   }
   return ctx.jira.searchIssues(jql);
 }
@@ -40,7 +41,7 @@ async function firstRepo(ctx: Ctx, repoSlug?: string, projectId?: string) {
   const pid = projectId ?? ctx.projectId;
   const repos = await ctx.stores.repos.listByProject(pid);
   const repo = repos[0];
-  if (!repo) throw new Error("no repository registered for this project yet");
+  if (!repo) fail("repo-not-registered");
   const zones = await ctx.stores.zones.listByRepo(repo.id);
   return { repo, zones };
 }

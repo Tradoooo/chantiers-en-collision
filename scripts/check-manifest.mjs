@@ -16,17 +16,16 @@
  */
 import { readFileSync } from "node:fs";
 import { load } from "js-yaml";
+import { TOOL_KEYS } from "../src/glue/tool-catalog.ts";
 
 const errors = [];
 const warns = [];
 const err = (m) => errors.push(m);
 
-const EXPECTED_TOOLS = [
-  "declare-footprint", "check-zone", "who-touches", "get-worksite",
-  "predict-footprint", "list-collisions", "list-clear-work", "next-clear-ticket",
-  "plan-parallel-work", "measure-parallel-width", "reserve-zone", "post-notice",
-  "resolve-collision", "close-worksite", "report-conflict", "create-hook-token",
-];
+// Single source of truth: src/glue/tool-catalog.ts. The gate checks that
+// manifest.yml's `rovo:mcp[0].tools` stays faithful to the catalog (never the
+// other way around). Node ≥ 22.18 strips the types when loading the .ts.
+const EXPECTED_TOOLS = TOOL_KEYS;
 const VERBS = new Set(["GET", "CREATE", "UPDATE"]);
 const INPUT_TYPES = new Set(["string", "integer", "number", "boolean"]);
 const INTERVALS = new Set(["fiveMinute", "hour", "day", "week"]);

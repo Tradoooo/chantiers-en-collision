@@ -17,8 +17,7 @@ SHA="$(git -C "$REPO_DIR" rev-parse --short HEAD)"
 
 cd "$REPO_DIR"
 echo "==> build"
-npm run build:site
-node scripts/check-site-bundle.mjs
+node scripts/verify.mjs --only check:site
 
 echo "==> gh-pages worktree"
 git worktree remove --force "$WT" 2>/dev/null || true

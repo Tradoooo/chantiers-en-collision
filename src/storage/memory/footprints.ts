@@ -13,38 +13,18 @@ import type {
   FootprintCoverage,
   FootprintEntry,
   FootprintEntryInput,
-  FootprintMode,
   FootprintSource,
   PathKind,
 } from "../../core/types";
 import { classifyPath, entriesOverlap } from "../../core/paths";
+import { strongestMode, strongestSource } from "../../core/footprints";
 import type { FootprintStore } from "../interfaces";
 import { clone } from "./clone";
 import type { MemoryData } from "./state";
 import { nowIso } from "./util";
 
-/** predicted < declared < observed < attested (spec §5). */
-const SOURCE_RANK: Record<FootprintSource, number> = {
-  predicted: 0,
-  declared: 1,
-  observed: 2,
-  attested: 3,
-};
-
-/** edit < create < delete/rename: a destructive intent is never downgraded. */
-const MODE_RANK: Record<FootprintMode, number> = {
-  edit: 0,
-  create: 1,
-  delete: 2,
-  rename: 2,
-};
-
 function footprintKey(worksiteId: string, path: string): string {
   return `${worksiteId}\u0000${path}`;
-}
-
-function strongest<T extends string>(rank: Record<T, number>, current: T, incoming: T): T {
-  return rank[incoming] > rank[current] ? incoming : current;
 }
 
 function fromInput(input: FootprintEntryInput, at: string): FootprintEntry {
@@ -64,8 +44,8 @@ function fromInput(input: FootprintEntryInput, at: string): FootprintEntry {
 function merged(existing: FootprintEntry, input: FootprintEntryInput, at: string): FootprintEntry {
   const entry: FootprintEntry = {
     ...existing,
-    source: strongest(SOURCE_RANK, existing.source, input.source),
-    mode: strongest(MODE_RANK, existing.mode, input.mode),
+    source: strongestSource(existing.source, input.source),
+    mode: strongestMode(existing.mode, input.mode),
     lastAt: at > existing.lastAt ? at : existing.lastAt,
   };
   if (existing.declaredMismatch || input.declaredMismatch) entry.declaredMismatch = true;
