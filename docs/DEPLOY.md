@@ -318,3 +318,25 @@ is never blocked).
   through `create-hook-token`.
 - **Runs on Atlassian**: not eligible while the web trigger is `dynamic`
   (it must return hook JSON). Expected.
+
+### Live verification (12 November, ~15:00 Paris)
+
+- `scripts/seed-jira-demo.py` — created project **PROJ** (software), components
+  billing/database/auth/i18n, 7+1 real tickets; the `avi:jira:created:issue`
+  trigger opened **planned** worksites (visible via `/status`); In-Progress
+  transitions opened human worksites.
+- CI route with the project token attested 4 branch footprints — including the
+  **D4** on `db/migrations` (PROJ-3 × PROJ-4) shown by `/status`
+  (`openCollisions: 2`).
+- Agent route with the personal token: `/open` + `/touch` returned the spec §8
+  verdict block (`caution · D2 · src/billing/invoice.ts · neighbour PROJ-1 ·
+  PR open · wait for the merge · resume 15 min`).
+- `templates/watcher/chantier-watch.mjs` verified live: editing a file in a
+  scratch git repo printed the real verdict in the terminal (including the
+  same-ticket/same-pilot flags).
+- `scripts/smoke-e2e.sh` against the live web trigger: **SMOKE OK (8/8)**.
+- CC-24: creating PROJ-8 (“Render invoice PDFs…”) triggered the prediction
+  chain with the inferhub fallback armed (INFERHUB_* variables, key
+  encrypted) — no error in `forge logs`.
+- Bootstrap disarmed: `BOOTSTRAP_SECRET`/`BOOTSTRAP_ACCOUNT` unset (takes
+  effect on the deploy that followed; `/bootstrap` is an empty 200 again).

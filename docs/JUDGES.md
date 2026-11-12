@@ -1,5 +1,17 @@
 # Judge guide
 
+## Route −1 — the app is ALREADY deployed with real data
+
+Development environment on `one-atlas-cndz.atlassian.net`, app id `2ef208cc-6621-42a7-8557-5ce5ab3f6882`:
+project **PROJ** with 8 real tickets (components billing/database/auth/i18n, priorities, due dates),
+4 of them In Progress with CI-attested footprints, **2 open collisions** (a D4 on the exclusive
+migrations resource, a D2 on `src/billing/invoice.ts`), one agent session live. The end-to-end smoke
+(`scripts/smoke-e2e.sh`) passes **8/8** against the live web trigger, and the universal watcher was
+verified against it (real D2 verdicts printed in the terminal). Re-seed anytime with
+`scripts/seed-jira-demo.py`. The LLM prediction fallback (CC-24) is wired to the inferhub gateway
+(encrypted Forge variable): creating PROJ-8 triggered a planned worksite with a predicted footprint.
+
+
 ## Route 0 — in the browser, nothing to install
 
 **<https://baptistefaisy.github.io/chantiers-en-collision/>** — the GitHub Pages demo bundles the

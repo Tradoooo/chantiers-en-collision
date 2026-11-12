@@ -7,6 +7,15 @@ Forge app for Jira · **Codegeist 2026**, category *Apps for Software Teams* · 
 The page runs the REAL collision engine compiled for the browser (in-memory stores):
 a two-agent verdict playground and the full “Four agents” scenario, replayable step by step.
 
+**Client integrations** — one protocol, many doors:
+- **Claude Code**: native hooks (`.claude/settings.json` + `.chantier/hook.sh`, see [`billing-demo`](https://github.com/BaptisteFaisy/billing-demo));
+- **Any editor/agent** (Cursor, Aider, Copilot CLI, Codex, vim…): [`templates/watcher/chantier-watch.mjs`](docs/WATCHER.md) — a zero-dependency fs watcher, **verified live against the deployed app**;
+- **OpenCode**: native plugin ([`templates/opencode/`](docs/OPENCODE.md));
+- **CI** (GitHub Actions, GitLab CI, Bitbucket Pipelines): attested footprint at push time ([`templates/ci/`](templates/ci));
+- **Any MCP client** (Claude Code, Cursor…): the 16 tools over OAuth 2.1 once external exposure is enabled.
+
+**Live deployment**: the app runs on `one-atlas-cndz.atlassian.net` (development env) with real data — 8 seeded tickets (`PROJ-1…8`, components, priorities, dues), CI-attested footprints, real D2/D4 collisions and a triggered LLM prediction. Reproduce with [`scripts/seed-jira-demo.py`](scripts/seed-jira-demo.py); the end-to-end smoke passed **8/8** against the deployed web trigger.
+
 **Companion repositories**
 - [`BaptisteFaisy/billing-demo`](https://github.com/BaptisteFaisy/billing-demo) — the sample repo judges clone: hook, CI step and curl scripts ready (walkthrough inside).
 - [`BaptisteFaisy/open-footprint-protocol`](https://github.com/BaptisteFaisy/open-footprint-protocol) — the open protocol: any agent, any backend — spec, JSON schemas, reference server, skill.
