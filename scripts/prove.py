@@ -249,6 +249,28 @@ def main():
     proof("P12 judge routes: MCP endpoint + sample repo", out.strip() in ("public", "PUBLIC") or mcp_state.startswith("401"),
           f"MCP {mcp_state} · billing-demo {out.strip()}")
 
+    # P13 — the public demo route serves the REAL worksites of the deployment
+    with urllib.request.urlopen(f"{WEBTRIGGER}/demo/state?repo=acme/billing", timeout=20) as resp:
+        demo_state = json.loads(resp.read())
+    live_ws = demo_state.get("worksites", [])
+    proof("P13 public /demo/state = live worksites of the deployment",
+          demo_state.get("ok") is True and len(live_ws) > 0,
+          f"{len(live_ws)} live worksite(s), {len(demo_state.get('collisions', []))} live collision(s)")
+
+    # P14 — the public demo route computes a REAL verdict against them
+    demo_verdict = wt("demo/verdict", {"repo": "acme/billing", "paths": "src/billing/invoice.ts"})
+    demo_collisions = demo_verdict.get("collisions", []) if isinstance(demo_verdict, dict) else []
+    proof("P14 public /demo/verdict = real verdict from the deployment",
+          isinstance(demo_verdict, dict) and demo_verdict.get("ok") is True and len(demo_collisions) > 0,
+          f"verdict {demo_verdict.get('verdict')} · " + (f"D{demo_collisions[0]['degree']} vs {demo_collisions[0]['neighborIssueKey']}" if demo_collisions else "no collision"))
+
+    # P15 — the public site is really wired to the deployment
+    with urllib.request.urlopen(f"{SITE}demo.js", timeout=30) as resp:
+        bundle = resp.read().decode()
+    wired = "/demo/verdict" in bundle and "/demo/state" in bundle
+    proof("P15 the public site calls the deployment (live routes in the bundle)", wired,
+          f"/demo/verdict in bundle: {'/demo/verdict' in bundle} · /demo/state in bundle: {'/demo/state' in bundle}")
+
     # ---- report ----
     ok = sum(1 for _, o, _, _ in results if o)
     total = len(results)

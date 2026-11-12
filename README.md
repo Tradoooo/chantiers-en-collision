@@ -15,6 +15,14 @@ a two-agent verdict playground and the full “Four agents” scenario, replayab
 - **Any MCP client** (Claude Code, Cursor…): the 16 tools over OAuth 2.1 once external exposure is enabled;
 - **Agent fleets** (the inferhub-gateway ZeroClaw agents): the local stdio [MCP bridge](docs/MCP-BRIDGE.md) — no OAuth, one `[[mcp.servers]]` entry.
 
+**The site IS the deployment.** The playground and the *live worksites* band call
+the running Forge app over public demo routes (`/demo/verdict`, `/demo/state`):
+the verdict the judge reads is computed by the deployed engine against the
+**real** worksites of `acme/billing` (PROJ-1, PROJ-10, PROJ-12…), refreshed
+every 10 s. Only the demo repository is exposed (allow-list in code); if the
+deployment is unreachable the page falls back to the same engine running
+locally, and says so.
+
 **Proofs — every step, checked against the running deployment**
 [`docs/PROOFS.md`](docs/PROOFS.md) holds the receipts of the last live run
 (`python3 scripts/prove.py`): the app installed and up-to-date, the public

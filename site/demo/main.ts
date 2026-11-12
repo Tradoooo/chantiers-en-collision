@@ -96,15 +96,106 @@ function verdictCard(title: string, verdict: Verdict): HTMLElement {
   return card;
 }
 
+interface LiveVerdict {
+  ok: boolean;
+  verdict: string;
+  text: string;
+  collisions: { degree: number; path: string; neighborIssueKey: string; neighborState: string }[];
+}
+
+/** The REAL verdict, computed by the deployment against its live worksites. */
+async function liveVerdict(paths: string): Promise<LiveVerdict | undefined> {
+  try {
+    const res = await fetch(`${DEMO_BASE}/demo/verdict`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repo: DEMO_REPO, paths }),
+    });
+    if (!res.ok) return undefined;
+    const body = (await res.json()) as LiveVerdict;
+    return body.ok === true ? body : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Live worksites and collisions of the demo repository. */
+async function liveState(): Promise<{
+  worksites: { issueKey: string; state: string; kind: string; paths: string[] }[];
+  collisions: { issueKeyA: string; issueKeyB: string; degree: number; path: string }[];
+  generatedAt: string;
+} | undefined> {
+  try {
+    const res = await fetch(`${DEMO_BASE}/demo/state?repo=${DEMO_REPO}`);
+    if (!res.ok) return undefined;
+    return (await res.json()) as never;
+  } catch {
+    return undefined;
+  }
+}
+
+function liveVerdictCard(v: LiveVerdict): HTMLElement {
+  const card = el("div", "card verdict verdict-caution live-card");
+  card.appendChild(el("h3", undefined, "PROJ-101 · agent of Karim"));
+  card.appendChild(el("span", "chip chip-live", "LIVE · deployment"));
+  for (const c of v.collisions.slice(0, 6)) {
+    card.appendChild(
+      el("div", "collision-line", `D${c.degree} · ${c.path} · neighbour ${c.neighborIssueKey} (${c.neighborState})`),
+    );
+  }
+  const pre = el("pre", "verdict-text");
+  pre.textContent = v.text;
+  card.appendChild(pre);
+  return card;
+}
+
+/** The live worksite map: who is where, right now, on the real deployment. */
+async function renderLiveState(root: HTMLElement): Promise<void> {
+  const state = await liveState();
+  if (state === undefined) {
+    root.replaceChildren(el("p", "muted", "deployment unreachable — the local engine below still runs."));
+    return;
+  }
+  root.replaceChildren();
+  const head = el("div", "proof-head");
+  head.appendChild(el("span", "proof-dot", ""));
+  head.appendChild(el("strong", undefined, "live worksites on the deployment"));
+  head.appendChild(el("span", "muted small", ` · ${state.generatedAt}`));
+  root.appendChild(head);
+  const table = el("table", "kv");
+  for (const w of state.worksites) {
+    const tr = el("tr");
+    tr.appendChild(el("td", "kv-k", w.issueKey));
+    tr.appendChild(el("td", "kv-v", `${w.state} · ${w.kind} · ${w.paths.join(", ") || "(no footprint yet)"}`));
+    table.appendChild(tr);
+  }
+  root.appendChild(table);
+  if (state.collisions.length > 0) {
+    root.appendChild(el("p", "muted small", "open collisions right now:"));
+    const list = el("div", "stack");
+    for (const c of state.collisions.slice(0, 8)) {
+      list.appendChild(el("p", undefined, `D${c.degree} · ${c.issueKeyA} × ${c.issueKeyB} · ${c.path}`));
+    }
+    root.appendChild(list);
+  }
+}
+
 async function runPlayground(): Promise<void> {
   const pathsA = (document.getElementById("paths-a") as HTMLTextAreaElement).value;
   const pathsB = (document.getElementById("paths-b") as HTMLTextAreaElement).value;
   const out = document.getElementById("playground-out");
   if (!out) return;
   out.textContent = "computing…";
+  const live = await liveVerdict(pathsB);
+  if (live !== undefined) {
+    out.replaceChildren(liveVerdictCard(live));
+    return;
+  }
   try {
     const res = await playground(pathsA, pathsB);
-    out.replaceChildren(verdictCard("PROJ-88 · agent of Léa", res.a), verdictCard("PROJ-101 · agent of Karim", res.b));
+    const card = verdictCard("PROJ-101 · agent of Karim", res.b);
+    card.appendChild(el("span", "chip", "local simulation (deployment unreachable)"));
+    out.replaceChildren(card);
   } catch (e) {
     out.textContent = `error: ${(e as Error).message}`;
   }
@@ -217,6 +308,12 @@ async function boot(): Promise<void> {
   WORLD.subscribe(() => mountAll(WORLD));
 }
 
+/** The deployed app: public demo routes (read-only, demo repo only). */
+const DEMO_BASE =
+  "https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/" +
+  "CMqSJpepH37pD_ux7w8m_3P7BEQ";
+const DEMO_REPO = "acme/billing";
+
 /** Public aggregate proof of life of the deployed app (see /proof route). */
 const PROOF_URL =
   "https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ/proof";
@@ -299,6 +396,11 @@ function init(): void {
   void boot();
   void pollProof();
   window.setInterval(() => void pollProof(), 30000);
+  const liveRoot = document.getElementById("live-state");
+  if (liveRoot) {
+    void renderLiveState(liveRoot);
+    window.setInterval(() => void renderLiveState(liveRoot), 10000);
+  }
 }
 
 if (typeof document !== "undefined") {

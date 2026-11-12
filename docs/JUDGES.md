@@ -1,5 +1,17 @@
 # Judge guide
 
+## Route 0 — the public site, wired to the running deployment
+
+<https://baptistefaisy.github.io/chantiers-en-collision/> — open it and you are looking at the
+**deployed** Forge app, not a mock: the *live worksites* band reads `/demo/state` (the real
+worksites of `acme/billing` in Forge SQL, refreshed every 10 s) and the playground calls
+`/demo/verdict`, so the verdict you get is the one the running engine computed against those
+live worksites — D2 collisions against PROJ-1/PROJ-10/PROJ-12 as they really are. The band
+*Live proof* shows the deployment's own counters (worksites, collisions, events).
+
+If the deployment is asleep the page says so and falls back to the same engine running locally.
+
+
 ## Route −1 — the app is ALREADY deployed with real data
 
 Development environment on `one-atlas-cndz.atlassian.net`, app id `2ef208cc-6621-42a7-8557-5ce5ab3f6882`:
