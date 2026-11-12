@@ -340,3 +340,23 @@ is never blocked).
   encrypted) — no error in `forge logs`.
 - Bootstrap disarmed: `BOOTSTRAP_SECRET`/`BOOTSTRAP_ACCOUNT` unset (takes
   effect on the deploy that followed; `/bootstrap` is an empty 200 again).
+
+### Two commands, not one — `forge deploy` is not enough
+
+`forge deploy` uploads a **new version** of the app, but the **installation**
+on the site keeps serving the version it was installed with. A new route (or
+any code change) appears "not deployed" until:
+
+```bash
+forge-atlassian deploy -e development --non-interactive [--approve MAJOR_VERSION_RULE]
+forge-atlassian install --upgrade -e development -p jira \
+  -s one-atlas-cndz.atlassian.net --non-interactive --confirm-scopes
+```
+
+Symptoms of a missing upgrade: the old routes answer, the new ones return an
+empty 200 (the web trigger is fail-open by design, so a missing route is
+silent — `forge logs` shows nothing). Rule of thumb: **commit → deploy →
+install --upgrade → test**.
+
+Also: `forge deploy` packages the **committed** state (git HEAD), not the
+working tree — uncommitted changes are not deployed.

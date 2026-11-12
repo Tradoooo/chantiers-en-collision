@@ -12,7 +12,8 @@ a two-agent verdict playground and the full “Four agents” scenario, replayab
 - **Any editor/agent** (Cursor, Aider, Copilot CLI, Codex, vim…): [`templates/watcher/chantier-watch.mjs`](docs/WATCHER.md) — a zero-dependency fs watcher, **verified live against the deployed app**;
 - **OpenCode**: native plugin ([`templates/opencode/`](docs/OPENCODE.md));
 - **CI** (GitHub Actions, GitLab CI, Bitbucket Pipelines): attested footprint at push time ([`templates/ci/`](templates/ci));
-- **Any MCP client** (Claude Code, Cursor…): the 16 tools over OAuth 2.1 once external exposure is enabled.
+- **Any MCP client** (Claude Code, Cursor…): the 16 tools over OAuth 2.1 once external exposure is enabled;
+- **Agent fleets** (the inferhub-gateway ZeroClaw agents): the local stdio [MCP bridge](docs/MCP-BRIDGE.md) — no OAuth, one `[[mcp.servers]]` entry.
 
 **Live deployment**: the app runs on `one-atlas-cndz.atlassian.net` (development env) with real data — 8 seeded tickets (`PROJ-1…8`, components, priorities, dues), CI-attested footprints, real D2/D4 collisions and a triggered LLM prediction. Reproduce with [`scripts/seed-jira-demo.py`](scripts/seed-jira-demo.py); the end-to-end smoke passed **8/8** against the deployed web trigger.
 
