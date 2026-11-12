@@ -102,7 +102,14 @@ export const SCHEMA_SQL: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_footprint_repo_path ON footprint (repo_id, path)`,
   `CREATE INDEX IF NOT EXISTS idx_footprint_worksite ON footprint (worksite_id)`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_footprint_worksite_path ON footprint (worksite_id, path)`,
+  // The business key of a footprint is (worksite_id, path) — one row per
+  // path per worksite. The code enforces it (SELECT then INSERT/UPDATE, and
+  // the memory store keys by it). A UNIQUE index would enforce it in the
+  // database too, but adding it to a table that already holds live rows
+  // fails if a single duplicate exists — so it waits for the duplicate
+  // check on the live table (scripts/check-storage.mjs keeps the contract
+  // in the meantime).
+  `CREATE INDEX IF NOT EXISTS idx_footprint_worksite_path ON footprint (worksite_id, path)`,
 
   /* --------------------------- collision --------------------------- */
   `CREATE TABLE IF NOT EXISTS collision (

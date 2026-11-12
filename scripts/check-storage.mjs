@@ -95,11 +95,19 @@ check(
   `both footprint stores must expose the same methods (memory: ${memoryKeys.join(",")} / forge: ${forgeKeys.join(",")})`,
 );
 
-// 6. the schema enforces the footprint key.
-check(
-  /CREATE UNIQUE INDEX IF NOT EXISTS idx_footprint_worksite_path ON footprint \(worksite_id, path\)/.test(schema),
-  `${SCHEMA} must declare the unique index on footprint (worksite_id, path)`,
+// 6. the schema indexes the footprint key.
+const footprintKeyIndex = /CREATE (UNIQUE )?INDEX IF NOT EXISTS idx_footprint_worksite_path ON footprint \(worksite_id, path\)/.exec(
+  schema,
 );
+check(
+  footprintKeyIndex !== null,
+  `${SCHEMA} must declare the index on footprint (worksite_id, path)`,
+);
+if (footprintKeyIndex !== null && footprintKeyIndex[1] === undefined) {
+  console.warn(
+    "check-storage: the footprint key index is not UNIQUE — the contract is enforced in the code only (live duplicate check pending)",
+  );
+}
 
 if (failures.length > 0) {
   console.error("check-storage: FAILED");
