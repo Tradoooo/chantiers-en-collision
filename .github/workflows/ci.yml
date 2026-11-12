@@ -21,7 +21,7 @@ concurrency:
 
 env:
   # Self-hosted runner services don't load the login shell PATH.
-  PATH: /home/baptiste/tools/node-v22.12.0-linux-x64/bin:/home/baptiste/.local/bin:/usr/local/bin:/usr/bin:/bin
+  PATH: /home/baptiste/tools/node-v26.9.0-linux-x64/bin:/home/baptiste/.local/bin:/usr/local/bin:/usr/bin:/bin
 
 jobs:
   quality:
