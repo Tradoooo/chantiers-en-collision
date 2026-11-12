@@ -15,6 +15,7 @@ Credentials are read like everywhere else (never printed):
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -26,12 +27,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-WEBTRIGGER = (
-    "https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/"
-    "CMqSJpepH37pD_ux7w8m_3P7BEQ"
-)
-MCP_ENDPOINT = "https://mcp.atlassian.com/forge/2ef208cc-6621-42a7-8557-5ce5ab3f6882"
-SITE = "https://tradoooo.github.io/chantiers-en-collision/"
+# One place for the deployment endpoints (scripts/deploy.json) — the doc and
+# the proofs both read it, so a site/app move is a one-line change.
+DEPLOY = json.loads((ROOT / "scripts" / "deploy.json").read_text())
+WEBTRIGGER = DEPLOY["webtrigger"]
+MCP_ENDPOINT = DEPLOY["mcpEndpoint"]
+SITE = DEPLOY["site"]
 
 
 def creds():
@@ -49,9 +50,26 @@ def creds():
     return email, site, token
 
 
+def app_tokens():
+    """The app's personal / project hook tokens (identity = token)."""
+    tokens = {}
+    for scope in ("personal", "project"):
+        path = ROOT / ".tokens" / f"{scope}.json"
+        if path.exists():
+            tokens[scope] = json.loads(path.read_text())["token"]
+    return tokens
+
+
 EMAIL, SITE_NAME, API_TOKEN = creds()
-PERSONAL = json.loads((ROOT / ".tokens" / "personal.json").read_text())["token"]
-PROJECT = json.loads((ROOT / ".tokens" / "project.json").read_text())["token"]
+_TOKENS = app_tokens()
+PERSONAL = _TOKENS["personal"]
+PROJECT = _TOKENS["project"]
+
+
+def expected_tool_count():
+    """The number of MCP tools advertised, from the single source of truth."""
+    catalog = (ROOT / "src" / "glue" / "tool-catalog.ts").read_text()
+    return len(set(re.findall(r'\bkey:\s*"([^"]+)"', catalog)))
 
 results = []
 
@@ -226,7 +244,10 @@ def main():
             tools = len(msg["result"]["tools"])
         if msg.get("id") == 3:
             verdict = msg["result"]["content"][0]["text"].split("\n")[0]
-    proof("P7 local MCP bridge (stdio) → 16 tools + verdict", tools == 16 and "verdict" in verdict, f"{tools} tools · {verdict}")
+    expected = expected_tool_count()
+    proof("P7 local MCP bridge (stdio) → tools + verdict",
+          tools == expected and "verdict" in verdict,
+          f"{tools} tools (expected {expected}) · {verdict}")
 
     # P8 — the end-to-end smoke
     code, out = run("bash scripts/smoke-e2e.sh", timeout=240,

@@ -30,18 +30,20 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  CLOSE_TIMEOUT_MS,
+  FETCH_TIMEOUT_MS,
   TOUCH_EVENT_NAME,
   buildCloseBody,
-  buildHookHeaders,
   buildOpenBody,
   buildTouchBody,
   defaultSession,
+  postJson,
 } from "../chantiers-lib/payload.mjs";
 
 const IGNORED_SEGMENTS = new Set([".git", "node_modules", "dist", ".chantier"]);
-/** The app answers in ~1 s when warm, but a cold web trigger can take longer. */
-const FETCH_MS = 10000;
-const CLOSE_MS = 1500;
+// The canonical timeouts (cold start of the web trigger can take a while).
+const FETCH_MS = FETCH_TIMEOUT_MS;
+const CLOSE_MS = CLOSE_TIMEOUT_MS;
 
 /* ---------------------------------------------------------- config ------ */
 
@@ -87,34 +89,13 @@ function readConfig() {
 
 /* ---------------------------------------------------------- http -------- */
 
-/** POST {base}/{route} with a hard timeout. Never throws: returns undefined. */
+/** POST {base}/{route} — the shared transport in payload.mjs. Never throws. */
 async function post(cfg, route, body, timeoutMs) {
-  // A cold Forge web trigger can take longer than the timeout: one retry.
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const headers = buildHookHeaders(cfg.token, cfg.repo);
-      const res = await fetch(`${cfg.base}/${route}`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      const raw = await res.text();
-      if (!raw.trim()) return undefined;
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return undefined;
-      }
-    } catch {
-      if (attempt === 1) return undefined;
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  return undefined;
+  return postJson(cfg.base, route, body, {
+    token: cfg.token,
+    repo: cfg.repo,
+    timeoutMs,
+  });
 }
 
 /** Print the useful part of a hook response on stdout, prefixed and visible. */

@@ -136,6 +136,17 @@ case "$ACTION" in
     # 1.5 s budget for SessionEnd; output is not used, errors are swallowed.
     post close 1.5 "$BODY" >/dev/null 2>&1 || true
     ;;
+  touch)
+    # PreToolUse: the client passes the tool input on stdin. Only a write tool
+    # carries a file path; the CONTENT never leaves the machine — just the path
+    # (the old raw http hook posted the whole tool input, content included).
+    FILE="$(json_field file_path)"
+    [ -n "$FILE" ] || exit 0
+    BODY="{\"session_id\":\"$(esc "$SESSION")\",\"tool_input\":{\"file_path\":\"$(esc "$FILE")\"},\
+\"cwd\":\"$(esc "$CWD")\",\"hook_event_name\":\"PreToolUse\"}"
+    RESPONSE="$(post touch 10 "$BODY")" || RESPONSE=""
+    [ -n "$RESPONSE" ] && printf '%s\n' "$RESPONSE"
+    ;;
   *)
     # Unknown action: do nothing, do not fail the agent.
     ;;

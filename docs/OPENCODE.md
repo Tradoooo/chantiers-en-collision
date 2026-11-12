@@ -27,7 +27,9 @@ four real hooks of that API:
 The permission hook is the only place OpenCode lets a plugin block an action:
 the plugin sets `event.effect = "deny"` and `event.message`, the tool call is
 rejected with the app's reason, and the agent reads it. Everything else is
-advice. It is **fail-open**: 3 s timeout (1.5 s for `/close`), any error is
+advice. It is **fail-open**: a 10 s timeout with one retry (1.5 s for `/close`) — the web
+trigger can cold-start — the budget lives in `templates/chantiers-lib/payload.mjs`
+(`FETCH_TIMEOUT_MS`, `CLOSE_TIMEOUT_MS`), shared with the watcher. Any error is
 swallowed, the agent continues.
 
 ## Install (short)

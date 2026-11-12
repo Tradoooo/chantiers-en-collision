@@ -33,10 +33,10 @@ import { execFileSync } from "node:child_process";
 import { isAbsolute, resolve } from "node:path";
 import * as lib from "./chantiers-lib.mjs";
 
-/** Timeout of a /open or /touch call, in ms. */
-const FETCH_MS = 3000;
+/** Timeout of a /open or /touch call — the canonical one (cold start safe). */
+const FETCH_MS = lib.FETCH_TIMEOUT_MS;
 /** Timeout of the best-effort /close call, in ms. */
-const CLOSE_MS = 1500;
+const CLOSE_MS = lib.CLOSE_TIMEOUT_MS;
 /** How long a verdict is reused for the same file (permission + tool hooks). */
 const CACHE_MS = 60000;
 /** Every line the plugin prints starts with this prefix. */
@@ -95,34 +95,18 @@ function readConfig(ctx) {
 }
 
 /**
- * POST {base}/{route} with a hard timeout. Never throws: on any error the
- * plugin simply continues without the app.
+ * POST {base}/{route} and parse the answer — the shared transport in
+ * `chantiers-lib/payload.mjs` (10 s budget + one retry on a cold web trigger).
+ * Never throws: the plugin continues without the app on any error.
  *
  * @returns {Promise<object|undefined>} the parsed body, or undefined
  */
 async function post(cfg, route, body, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const headers = lib.buildHookHeaders(cfg.token, cfg.repo);
-    const res = await fetch(`${cfg.base}/${route}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    const raw = await res.text();
-    if (raw.trim() === "") return undefined;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return undefined;
-    }
-  } catch {
-    return undefined;
-  } finally {
-    clearTimeout(timer);
-  }
+  return lib.postJson(cfg.base, route, body, {
+    token: cfg.token,
+    repo: cfg.repo,
+    timeoutMs,
+  });
 }
 
 /* ------------------------------------------------------- the plugin ----- */

@@ -26,7 +26,10 @@ The response — `hookSpecificOutput.additionalContext` or a hard-mode
 it is the feedback for the human or agent watching the terminal. On SIGINT /
 SIGTERM it POSTs `/close` and exits 0.
 
-The watcher is **passive and fail-open** (SPEC §20): a 3 s fetch timeout (1.5 s
+The watcher is **passive and fail-open** (SPEC §20): a 10 s fetch timeout with one retry
+(1.5 s for `/close`) — the web trigger can cold-start beyond 3 s, so the budget lives in
+`templates/chantiers-lib/payload.mjs` (`FETCH_TIMEOUT_MS`, `CLOSE_TIMEOUT_MS`), shared with
+the OpenCode plugin. Any error is
 for close), any network or JSON error is logged and swallowed, it never crashes
 and never blocks the write it observes. Identity comes from the Bearer token;
 the repo travels in the `X-Chantier-Repo` header. `.git`, `node_modules`,

@@ -117,3 +117,50 @@ export function buildHookHeaders(token, repoSlug) {
 export function defaultSession(prefix = "") {
   return `${prefix}${hostname()}-${process.pid}-${randomBytes(4).toString("hex")}`;
 }
+
+/**
+ * The canonical timeouts, so that the doc, the watcher and the OpenCode plugin
+ * never disagree. A cold Forge web trigger can take several seconds — 10 s and
+ * ONE retry is the floor that still leaves the agent unblocked.
+ */
+export const FETCH_TIMEOUT_MS = 10000;
+/** SessionEnd / close is fire-and-forget: a short budget is enough. */
+export const CLOSE_TIMEOUT_MS = 1500;
+
+/**
+ * POST {base}/{route} and parse the JSON answer, with ONE retry (the web
+ * trigger is fail-open and can cold-start beyond the timeout). Never throws:
+ * returns `undefined` on any error — the client keeps working either way.
+ *
+ * @param {string} base   ingest base URL, WITHOUT the trailing route
+ * @param {string} route  "open" | "touch" | "close" | …
+ * @param {object} body   the request body (already the right shape)
+ * @param {{token: string, repo?: string, timeoutMs?: number}} [opts]
+ */
+export async function postJson(base, route, body, { token, repo, timeoutMs = FETCH_TIMEOUT_MS } = {}) {
+  const url = `${String(base).replace(/\/+$/, "")}/${route}`;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: buildHookHeaders(token, repo),
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const raw = await res.text();
+      if (!raw.trim()) return undefined;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return undefined;
+      }
+    } catch {
+      if (attempt === 1) return undefined;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return undefined;
+}

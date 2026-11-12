@@ -28,6 +28,9 @@ export {
   buildTouchBody,
   defaultSession,
   joinPaths,
+  FETCH_TIMEOUT_MS,
+  CLOSE_TIMEOUT_MS,
+  postJson,
 } from "../chantiers-lib/payload.mjs";
 
 /** Tools that write to the filesystem. `bash` is deliberately absent. */

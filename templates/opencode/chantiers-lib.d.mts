@@ -16,6 +16,9 @@ export {
   buildTouchBody,
   defaultSession,
   joinPaths,
+  FETCH_TIMEOUT_MS,
+  CLOSE_TIMEOUT_MS,
+  postJson,
 } from "../chantiers-lib/payload.mjs";
 
 export declare const WRITE_TOOLS: readonly string[];
