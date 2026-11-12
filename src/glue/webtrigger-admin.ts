@@ -16,6 +16,7 @@ import type {
   WebtriggerRequest,
   WebtriggerRoute,
 } from "./webtrigger";
+import { DEMO_REPOS, demoState, demoVerdict } from "./demo";
 
 export const JSON_HEADERS = { "Content-Type": ["application/json"] };
 
@@ -224,4 +225,62 @@ export async function onTool(
     console.error(`tool ${tool} failed`, e);
     return jsonResponse({ error: (e as Error).message }, 500);
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Public demo routes — the REAL deployment, for the static site      */
+/* ------------------------------------------------------------------ */
+
+const DEMO_HEADERS = {
+  ...JSON_HEADERS,
+  "Access-Control-Allow-Origin": ["*"],
+  "Cache-Control": ["no-store"],
+};
+
+/** Live state of the demo repository (worksites, collisions). */
+export async function onDemoState(
+  body: Record<string, unknown>,
+  deps: WebtriggerDeps,
+): Promise<WebtriggerHttpResponse> {
+  const slug = text(body.repo) ?? DEMO_REPOS[0]!;
+  const ctx = await deps.buildCtx({});
+  const state = await demoState(ctx, slug);
+  if (state === undefined) {
+    return jsonResponse({ error: `unknown demo repository: ${slug}` }, 403);
+  }
+  return { statusCode: 200, headers: DEMO_HEADERS, body: JSON.stringify(state) };
+}
+
+/** The real verdict for a path, against the live worksites of the demo repo. */
+export async function onDemoVerdict(
+  body: Record<string, unknown>,
+  deps: WebtriggerDeps,
+): Promise<WebtriggerHttpResponse> {
+  const slug = text(body.repo) ?? DEMO_REPOS[0]!;
+  const paths = text(body.paths) ?? "";
+  if (paths.trim() === "") {
+    return jsonResponse({ error: "missing paths" }, 400);
+  }
+  const ctx = await deps.buildCtx({});
+  const result = await demoVerdict(ctx, slug, paths, text(body.issueKey));
+  if (result === undefined) {
+    return jsonResponse({ error: `unknown demo repository: ${slug}` }, 403);
+  }
+  return {
+    statusCode: 200,
+    headers: DEMO_HEADERS,
+    body: JSON.stringify({
+      ok: true,
+      verdict: result.verdict.kind,
+      text: result.verdict.text,
+      collisions: result.verdict.collisions.map((c) => ({
+        degree: c.degree,
+        path: c.path,
+        neighborIssueKey: c.neighbor.issueKey,
+        neighborState: c.neighbor.state,
+        neighborLabel: c.neighbor.actorLabel,
+      })),
+      state: result.state,
+    }),
+  };
 }
