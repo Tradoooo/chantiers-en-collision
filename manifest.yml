@@ -55,7 +55,8 @@ modules:
           title: Scope
           type: string
           required: false
-          description: "personal (default) or project (project tokens may only send CI footprints and conflicts)"
+          description: "personal (default) or project (project tokens may only send CI
+            footprints and conflicts)"
     - key: declare-footprint
       name: Declare footprint
       function: declareFootprint
@@ -94,7 +95,8 @@ modules:
           title: Session
           type: string
           required: false
-          description: "Agent session reference; distinguishes sessions, never grants rights"
+          description: "Agent session reference; distinguishes sessions, never grants
+            rights"
     - key: check-zone
       name: Check zone
       function: checkZone
@@ -241,7 +243,8 @@ modules:
           title: JQL
           type: string
           required: false
-          description: "Tickets to measure; defaults to the repo's recent history or open worksites"
+          description: "Tickets to measure; defaults to the repo's recent history or open
+            worksites"
         repo:
           title: Repository
           type: string
@@ -430,7 +433,8 @@ modules:
     - key: collision-stats
       # title, description and thumbnail are all required by this module.
       title: Collision stats
-      description: The four numbers — collisions seen before code, while working, at the PR, and missed until the merge.
+      description: The four numbers — collisions seen before code, while working, at
+        the PR, and missed until the merge.
       thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
       function: main
   jira:customField:
@@ -604,3 +608,7 @@ permissions:
     - read:jira-work
     - write:jira-work
     - read:me
+  external:
+    fetch:
+      backend:
+        - address: https://api.inferhub.dev
