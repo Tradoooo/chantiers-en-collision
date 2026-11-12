@@ -184,3 +184,18 @@ table.kv .kv-k { color: var(--muted); white-space: nowrap; width: 1%; }
   margin-top: 8px; background: #0b0f14;
 }
 .wave b { color: var(--accent); }
+
+/* ---------- live proof band ---------- */
+.proof-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 18px; margin-top: 12px;
+}
+.proof-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.proof-dot {
+  width: 10px; height: 10px; border-radius: 50%; background: var(--free);
+  box-shadow: 0 0 0 4px rgba(63, 185, 80, .15); display: inline-block;
+}
+.proof-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+.proof-cell { background: #0b0f14; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.proof-value { font-size: 24px; font-weight: 700; color: var(--accent); }
+.proof-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }

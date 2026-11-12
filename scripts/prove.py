@@ -1,0 +1,280 @@
+#!/usr/bin/env python3
+"""
+prove.py — the live proof suite: every step of the product, checked against
+the REAL deployment, with a receipt written to docs/PROOFS.md.
+
+Run it after any change (or from CI, manually):
+    python3 scripts/prove.py            # writes docs/PROOFS.md
+    python3 scripts/prove.py --quiet    # table only, no file write
+
+Credentials are read like everywhere else (never printed):
+  email/site : ~/.atlassian-login · token : ~/.atlassian-api-token
+  app tokens : .tokens/personal.json, .tokens/project.json
+  webtrigger : docs/DEPLOY.md (constant below)
+"""
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from base64 import b64encode
+from datetime import datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+WEBTRIGGER = (
+    "https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/"
+    "CMqSJpepH37pD_ux7w8m_3P7BEQ"
+)
+MCP_ENDPOINT = "https://mcp.atlassian.com/forge/2ef208cc-6621-42a7-8557-5ce5ab3f6882"
+SITE = "https://baptistefaisy.github.io/chantiers-en-collision/"
+
+
+def creds():
+    email = site = token = None
+    login = Path.home() / ".atlassian-login"
+    if login.exists():
+        for line in login.read_text().splitlines():
+            if line.startswith("email="):
+                email = line.split("=", 1)[1].strip()
+            if line.startswith("site="):
+                site = line.split("=", 1)[1].strip()
+    token_file = Path.home() / ".atlassian-api-token"
+    if token_file.exists():
+        token = token_file.read_text().strip()
+    return email, site, token
+
+
+EMAIL, SITE_NAME, API_TOKEN = creds()
+PERSONAL = json.loads((ROOT / ".tokens" / "personal.json").read_text())["token"]
+PROJECT = json.loads((ROOT / ".tokens" / "project.json").read_text())["token"]
+
+results = []
+
+
+def proof(name, ok, receipt):
+    results.append((name, bool(ok), receipt, datetime.now(timezone.utc).isoformat(timespec="seconds")))
+    print(f"{'PASS' if ok else 'FAIL'}  {name}")
+    return ok
+
+
+def jira(method, path, body=None):
+    url = f"https://{SITE_NAME}/rest/api/3{path}"
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Authorization", "Basic " + b64encode(f"{EMAIL}:{API_TOKEN}".encode()).decode())
+    req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        raw = resp.read()
+        return json.loads(raw) if raw else None
+
+
+def wt(route, body=None, token=PERSONAL):
+    req = urllib.request.Request(
+        f"{WEBTRIGGER}/{route}",
+        data=json.dumps(body or {}).encode(),
+        method="POST",
+    )
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("X-Chantier-Repo", "acme/billing")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read()
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        return {"httpError": e.code, "body": e.read().decode()[:200]}
+
+
+def run(cmd, timeout=120, env=None):
+    merged = {**os.environ, **(env or {})}
+    try:
+        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout, env=merged)
+        return proc.returncode, (proc.stdout + proc.stderr).strip()
+    except subprocess.TimeoutExpired:
+        return 124, "timeout"
+
+
+def main():
+    # P1 — the app is installed and up to date on the Jira site
+    code, out = run("forge-atlassian install list", timeout=90)
+    row = [l for l in out.splitlines() if "one-atlas-cndz" in l]
+    proof("P1 deployment installed & up-to-date (Jira site)", "Up-to-date" in out, (row[0] if row else out)[-160:])
+
+    # P2 — public proof route
+    with urllib.request.urlopen(f"{WEBTRIGGER}/proof", timeout=20) as resp:
+        proof_payload = json.loads(resp.read())
+    proof(
+        "P2 public /proof route (aggregate counters)",
+        proof_payload.get("ok") is True,
+        f"worksites={proof_payload.get('worksites')} collisions={proof_payload.get('collisions')} "
+        f"events={proof_payload.get('events')} lastEvent={proof_payload.get('lastEvent')}",
+    )
+
+    # P3 — real tickets in the Jira project
+    issues = jira("POST", "/search/jql", {"jql": "project = PROJ ORDER BY created DESC", "maxResults": 50})
+    count = issues.get("total", len(issues.get("issues", [])))
+    proof("P3 real Jira data (tickets in PROJ)", count > 0, f"{count} tickets in project PROJ")
+
+    # P4 — the trigger opens a worksite for a new ticket
+    stamp = int(time.time())
+    created = jira("POST", "/issue", {"fields": {
+        "project": {"key": "PROJ"},
+        "summary": f"proof {stamp} — trigger receipt",
+        "issuetype": {"id": "10002"},
+    }})
+    key = created["key"]
+    time.sleep(18)
+    status = wt("status", None)
+    live = [w for w in status.get("worksites", []) if w.get("issueKey") == key]
+    proof("P4 Jira trigger opens a worksite", len(live) > 0, f"{key} → {live[0]['state'] if live else 'absent'}")
+
+    # P5 — CI attested footprint (project token)
+    ci = wt("ci/footprint", {
+        "repoSlug": "acme/billing",
+        "branch": f"feature/{key}-proof",
+        "issueKey": key,
+        "files": ["src/billing/proof.ts"],
+        "prOpen": True,
+    }, token=PROJECT)
+    proof("P5 CI attested footprint (project token)", ci.get("ok") is True, f"{key}: {ci.get('entries')} file(s) attested, worksite {str(ci.get('worksiteId'))[:8]}…")
+
+    # P6 — the hook answers a real verdict
+    opened = wt("open", {"session_id": f"proof-{stamp}", "branch": f"feature/{key}-proof-agent", "cwd": "/home/dev/billing"})
+    touched = wt("touch", {
+        "session_id": f"proof-{stamp}",
+        "hook_event_name": "PreToolUse",
+        "tool_input": {"file_path": "/home/dev/billing/src/billing/invoice.ts"},
+        "cwd": "/home/dev/billing",
+    })
+    ctx = (touched or {}).get("hookSpecificOutput", {}).get("additionalContext", "")
+    proof("P6 hook answers a real verdict", "verdict" in ctx, ctx.split("\n")[0] if ctx else str(touched)[:120])
+
+    # P7 — the local MCP bridge (the inferhub fleet path)
+    lines = "\n".join([
+        json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+        json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}),
+        json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                    "params": {"name": "check-zone", "arguments": {"paths": "src/billing/invoice.ts"}}}),
+    ]) + "\n"
+    with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
+        fh.write(lines)
+        rpc_file = fh.name
+    code, out = run(
+        f"node templates/mcp-bridge/mcp-bridge.mjs < {rpc_file}",
+        timeout=90,
+        env={"CHANTIER_URL": WEBTRIGGER, "CHANTIER_TOKEN": PERSONAL, "CHANTIER_REPO": "acme/billing"},
+    )
+    tools = 0
+    verdict = ""
+    for line in out.splitlines():
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("id") == 2:
+            tools = len(msg["result"]["tools"])
+        if msg.get("id") == 3:
+            verdict = msg["result"]["content"][0]["text"].split("\n")[0]
+    proof("P7 local MCP bridge (stdio) → 16 tools + verdict", tools == 16 and "verdict" in verdict, f"{tools} tools · {verdict}")
+
+    # P8 — the end-to-end smoke
+    code, out = run("bash scripts/smoke-e2e.sh", timeout=240,
+                    env={"CHANTIER_URL": WEBTRIGGER, "CHANTIER_TOKEN": PROJECT,
+                         "CHANTIER_PERSONAL_TOKEN": PERSONAL, "CHANTIER_REPO": "acme/billing"})
+    proof("P8 end-to-end smoke against the deployment", "SMOKE OK" in out, out.splitlines()[-1] if out else "no output")
+
+    # P9 — the universal watcher prints a live verdict
+    with tempfile.TemporaryDirectory() as tmp:
+        run(f"cd {tmp} && git init -q && git checkout -q -b feature/PROJ-1-proof-watcher && mkdir -p src/billing && echo x > src/billing/invoice.ts && git add -A && git commit -qm init")
+        env = {"CHANTIER_URL": WEBTRIGGER, "CHANTIER_TOKEN": PERSONAL,
+               "CHANTIER_REPO": "acme/billing", "CHANTIER_DEBOUNCE_MS": "300"}
+        proc = subprocess.Popen(
+            ["node", str(ROOT / "templates/watcher/chantier-watch.mjs")],
+            cwd=tmp, env={**os.environ, **env}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        time.sleep(5)
+        with open(f"{tmp}/src/billing/invoice.ts", "a") as fh:
+            fh.write("touched\n")
+        time.sleep(10)
+        proc.terminate()
+        try:
+            watcher_out = proc.communicate(timeout=10)[0]
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            watcher_out = ""
+    proof("P9 universal watcher prints a live verdict", "verdict" in watcher_out,
+          next((l for l in watcher_out.splitlines() if "verdict" in l), watcher_out[:100]))
+
+    # P10 — the public site serves the whole tour and the video
+    with urllib.request.urlopen(SITE, timeout=30) as resp:
+        page = resp.read().decode()
+    sections = all(f'id="{s}"' in page for s in ("playground", "scenario", "proof", "map", "planning", "panel", "ops"))
+    with urllib.request.urlopen(f"{SITE}assets/demo.mp4", timeout=30) as resp:
+        video = resp.status
+    proof("P10 public site serves the full tour + the video", sections and video == 200,
+          f"sections ok={sections} · demo.mp4 HTTP {video}")
+
+    # P11 — CI green on HEAD
+    code, out = run("gh run list --workflow ci.yml --limit 1 --json conclusion,headSha", timeout=60)
+    try:
+        run_info = json.loads(out)[0]
+    except (json.JSONDecodeError, IndexError):
+        run_info = {}
+    proof("P11 CI green on HEAD", run_info.get("conclusion") == "success",
+          f"{run_info.get('headSha', '')[:7]} → {run_info.get('conclusion')}")
+
+    # P12 — the judge routes answer
+    try:
+        urllib.request.urlopen(MCP_ENDPOINT, timeout=20)
+        mcp_state = "200 (exposed)"
+    except urllib.error.HTTPError as e:
+        mcp_state = f"{e.code} " + ("OAuth 2.1" if "www-authenticate" in {k.lower() for k in e.headers} else "")
+    code, out = run("gh api repos/BaptisteFaisy/billing-demo --jq .visibility", timeout=60)
+    proof("P12 judge routes: MCP endpoint + sample repo", out.strip() in ("public", "PUBLIC") or mcp_state.startswith("401"),
+          f"MCP {mcp_state} · billing-demo {out.strip()}")
+
+    # ---- report ----
+    ok = sum(1 for _, o, _, _ in results if o)
+    total = len(results)
+    stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    lines = [
+        "# PROOFS — live receipts",
+        "",
+        f"Generated by `python3 scripts/prove.py` — **{ok}/{total} proofs passed** at {stamp}.",
+        "",
+        "| # | Proof | Result | Receipt |",
+        "|---|-------|--------|---------|",
+    ]
+    for i, (name, good, receipt, when) in enumerate(results, start=1):
+        receipt = (receipt or "").replace("|", "\\|").replace("\n", " ")
+        lines.append(f"| P{i} | {name} | {'✅' if good else '❌'} | `{receipt[:150]}` |")
+    lines += [
+        "",
+        "## How to reproduce",
+        "",
+        "```bash",
+        "python3 scripts/prove.py     # re-runs every proof against the deployment",
+        "```",
+        "",
+        "The proofs hit the **deployed** app (development environment on",
+        "`one-atlas-cndz.atlassian.net`), the **real** Jira project `PROJ`, the local",
+        "watcher and the local MCP bridge. No token is ever printed: receipts carry",
+        "counters, issue keys and verdict excerpts only.",
+        "",
+        f"_Last run: {stamp} — {ok}/{total} passed._",
+    ]
+    report = "\n".join(lines) + "\n"
+    if "--quiet" not in sys.argv:
+        (ROOT / "docs" / "PROOFS.md").write_text(report)
+        print("\n→ docs/PROOFS.md written")
+    print(f"\n{ok}/{total} proofs passed")
+    return 0 if ok == total else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

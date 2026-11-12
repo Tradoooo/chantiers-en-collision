@@ -217,6 +217,67 @@ async function boot(): Promise<void> {
   WORLD.subscribe(() => mountAll(WORLD));
 }
 
+/** Public aggregate proof of life of the deployed app (see /proof route). */
+const PROOF_URL =
+  "https://ecf6c663-f8a9-4232-b725-07cf87121ef4.webtrigger.atlassian.app/public/CMqSJpepH37pD_ux7w8m_3P7BEQ/proof";
+
+interface ProofPayload {
+  ok: boolean;
+  generatedAt: string;
+  repositories: number;
+  worksites: number;
+  collisions: number;
+  reservations: number;
+  events: number;
+  lastEvent: string | null;
+}
+
+function renderProof(target: HTMLElement, payload: ProofPayload): void {
+  target.replaceChildren();
+  const head = el("div", "proof-head");
+  head.appendChild(el("span", "proof-dot", ""));
+  head.appendChild(el("strong", undefined, "deployment alive"));
+  head.appendChild(el("span", "muted small", ` · ${payload.generatedAt}`));
+  target.appendChild(head);
+  const grid = el("div", "proof-grid");
+  const figures: [string, string | number][] = [
+    ["repositories", payload.repositories],
+    ["open worksites", payload.worksites],
+    ["open collisions", payload.collisions],
+    ["active reservations", payload.reservations],
+    ["events (10 last)", payload.events],
+  ];
+  for (const [label, value] of figures) {
+    const cell = el("div", "proof-cell");
+    cell.appendChild(el("div", "proof-value", String(value)));
+    cell.appendChild(el("div", "proof-label", label));
+    grid.appendChild(cell);
+  }
+  target.appendChild(grid);
+  if (payload.lastEvent) {
+    target.appendChild(el("div", "muted small", `last event: ${payload.lastEvent}`));
+  }
+}
+
+async function pollProof(): Promise<void> {
+  const target = document.getElementById("live-proof");
+  if (!target) return;
+  try {
+    const res = await fetch(PROOF_URL, { headers: { Accept: "application/json" } });
+    const payload = (await res.json()) as ProofPayload;
+    if (payload.ok === true) {
+      renderProof(target, payload);
+      return;
+    }
+  } catch {
+    // offline — keep the last reading
+  }
+  target.replaceChildren(
+    el("div", "proof-head"),
+    el("span", "muted", "deployment unreachable right now (the site still runs the same engine locally)"),
+  );
+}
+
 function init(): void {
   const declareBtn = document.getElementById("btn-declare");
   declareBtn?.addEventListener("click", () => void runPlayground());
@@ -236,6 +297,8 @@ function init(): void {
   scenarioBtn?.addEventListener("click", () => void runFourAgents());
   void runFourAgents();
   void boot();
+  void pollProof();
+  window.setInterval(() => void pollProof(), 30000);
 }
 
 if (typeof document !== "undefined") {
