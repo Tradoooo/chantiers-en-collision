@@ -15,6 +15,17 @@ import { createMemoryStores } from "../../src/storage/memory";
 import { makeClock } from "../../src/testing/clock";
 import { runScenario } from "../../src/simulation/run";
 import { FOUR_AGENTS } from "../../src/simulation/scenarios";
+import { ACTORS, createWorld, WORLD, type DemoWorld } from "./world";
+import { button, el, type SectionMount } from "./sections/types";
+import { sweep } from "../../src/services/maintenance";
+import { mountMap } from "./sections/map";
+import { mountPlanning } from "./sections/planning";
+import { mountPanel } from "./sections/panel";
+import { mountOps } from "./sections/ops";
+
+// Headless API for scripts/check-site-bundle.mjs (CI): the world is part of
+// the contract too, so the CI gate can seed it and assert the demo story.
+export { createWorld, WORLD };
 
 const REPO = "acme/billing";
 
@@ -65,13 +76,6 @@ const PRESETS: { label: string; a: string; b: string }[] = [
   { label: "Lockfile (exclusive)", a: "package-lock.json", b: "package-lock.json" },
   { label: "No collision", a: "src/billing/invoice.ts", b: "src/auth/login.ts" },
 ];
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (cls) node.className = cls;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
 
 function verdictCard(title: string, verdict: Verdict): HTMLElement {
   const card = el("div", `card verdict verdict-${verdict.kind}`);
@@ -140,6 +144,79 @@ async function runFourAgents(): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* The shared demo world: clock bar, actors, sections                  */
+/* ------------------------------------------------------------------ */
+
+async function advanceAndSweep(world: DemoWorld, minutes: number): Promise<void> {
+  world.advance(minutes);
+  await sweep(world.ctx("dev")); // dormancy, auto-close, reservation expiry
+  world.touch();
+}
+
+function hardModeToggle(world: DemoWorld): HTMLElement {
+  const label = el("label", "world-hard");
+  const box = el("input") as HTMLInputElement;
+  box.type = "checkbox";
+  void world.stores.rules.get("PROJ").then((r) => {
+    box.checked = r.hardMode;
+  });
+  box.addEventListener("change", () => {
+    void world.stores.rules.get("PROJ").then(async (r) => {
+      await world.stores.rules.set({ ...r, hardMode: box.checked });
+      world.touch();
+    });
+  });
+  label.appendChild(box);
+  label.appendChild(el("span", undefined, " hard mode (the hook denies)"));
+  return label;
+}
+
+function worldBar(world: DemoWorld): HTMLElement {
+  const bar = el("div", "world-bar");
+  bar.appendChild(
+    el("div", "world-clock", `Demo clock — ${world.clock.now().replace("T", " ").slice(0, 16)} UTC`),
+  );
+  const actors = el("div", "world-actors");
+  for (const a of ACTORS) actors.appendChild(el("span", "chip", a.displayName));
+  bar.appendChild(actors);
+  const controls = el("div", "world-controls");
+  controls.appendChild(button("+5 min", () => void advanceAndSweep(world, 5)));
+  controls.appendChild(button("+25 h → dormancy", () => void advanceAndSweep(world, 25 * 60)));
+  controls.appendChild(button("+8 d → auto-close", () => void advanceAndSweep(world, 8 * 24 * 60)));
+  controls.appendChild(hardModeToggle(world));
+  controls.appendChild(button("Reset the demo", () => void world.reset(), "btn ghost small"));
+  bar.appendChild(controls);
+  bar.appendChild(
+    el(
+      "p",
+      "world-hint",
+      "One shared in-memory world (repo acme/billing, seeded sprint): every section below reads and mutates it through the real services.",
+    ),
+  );
+  return bar;
+}
+
+function mountAll(world: DemoWorld): void {
+  const mounts: [string, SectionMount][] = [
+    ["mount-world", (root, w) => root.appendChild(worldBar(w))],
+    ["mount-map", mountMap],
+    ["mount-planning", mountPlanning],
+    ["mount-panel", mountPanel],
+    ["mount-ops", mountOps],
+  ];
+  for (const [id, mount] of mounts) {
+    const root = document.getElementById(id);
+    if (root) mount(root, world);
+  }
+}
+
+async function boot(): Promise<void> {
+  await WORLD.seed();
+  mountAll(WORLD);
+  WORLD.subscribe(() => mountAll(WORLD));
+}
+
 function init(): void {
   const declareBtn = document.getElementById("btn-declare");
   declareBtn?.addEventListener("click", () => void runPlayground());
@@ -158,6 +235,7 @@ function init(): void {
   const scenarioBtn = document.getElementById("btn-scenario");
   scenarioBtn?.addEventListener("click", () => void runFourAgents());
   void runFourAgents();
+  void boot();
 }
 
 if (typeof document !== "undefined") {

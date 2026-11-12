@@ -82,6 +82,61 @@
       <div id="scenario-out" class="steps" aria-live="polite"></div>
     </section>
 
+    <section id="world" class="demo">
+      <h2>The live demo world</h2>
+      <p class="sub">
+        Everything below shares ONE in-memory world: the repository
+        <code>acme/billing</code>, a seeded sprint, four agent sessions of the same
+        pilot and a rival. Act anywhere — declare, reserve, post a notice, move the
+        clock — and every section updates, because they all run the real services.
+      </p>
+      <div id="mount-world"></div>
+    </section>
+
+    <section id="map" class="demo">
+      <h2>Worksite map · zones · who touches</h2>
+      <p class="sub">
+        The repository tree coloured by occupation (spec §12): who is where, since
+        when, with which overlap degree. The zone catalog gives each part of the repo
+        its nature — exclusive, hotspot, frozen or out of scope — and the parallel
+        width tells how many agents this repo supports at once.
+      </p>
+      <div id="mount-map"></div>
+    </section>
+
+    <section id="planning" class="demo">
+      <h2>Sprint planning · waves · dispatcher</h2>
+      <p class="sub">
+        <code>plan-parallel-work</code> turns the sprint into collision-free waves,
+        hinge tickets first and alone. The sprint check lists the risky pairs, and
+        the dispatcher answers "the next clear ticket for this worker".
+      </p>
+      <div id="mount-planning"></div>
+    </section>
+
+    <section id="panel" class="demo">
+      <h2>Worksite panel · collisions · notices · reservations</h2>
+      <p class="sub">
+        The ticket panel: footprint by source (predicted, declared, observed,
+        attested), neighbours, collisions with their six outcomes — wait, sequence,
+        coordinate, split, merge, override — the worksite mailbox and bounded
+        reservations.
+      </p>
+      <div id="mount-panel"></div>
+    </section>
+
+    <section id="ops" class="demo">
+      <h2>Operations · hook · CI · lifecycle · prediction · learning</h2>
+      <p class="sub">
+        What happens without the app's cooperation: the hook observes every write
+        (and denies in hard mode), the CI attests the branch footprint at push time,
+        idle worksites go dormant then close, reservations expire — and the app
+        learns: prediction accuracy per component, zone reclassification proposals,
+        the four numbers.
+      </p>
+      <div id="mount-ops"></div>
+    </section>
+
     <section class="degrees">
       <h2>Collision degrees</h2>
       <table>

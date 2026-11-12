@@ -57,7 +57,20 @@ if (clear.b.kind !== "free" || clear.b.collisions.length !== 0) {
   fail(`clear playground: expected free, got ${clear.b.kind}`);
 }
 
+// The shared demo world must seed headlessly (map/panel/planning/ops sections
+// all render from it): repo, four-plus open worksites, one reservation,
+// one pending notice, merged history for prediction.
+if (typeof api.createWorld !== "function") fail("createWorld is not exported by the bundle");
+const world = api.createWorld();
+await world.seed();
+const open = await world.stores.worksites.listOpenByRepo(world.repoId());
+if (open.length < 4) fail(`seeded world: expected >= 4 open worksites, got ${open.length}`);
+const active = await world.stores.reservations.listActive(world.repoId(), world.clock.now());
+if (active.length !== 1) fail(`seeded world: expected 1 active reservation, got ${active.length}`);
+const history = await world.jira.mergedHistory("acme/billing");
+if (!Array.isArray(history) || history.length === 0) fail("seeded world: merged history is empty");
+
 console.log(
   `site bundle OK — scenario ${scenario.results.length}/${scenario.results.length} steps, ` +
-    "playground verdicts wait-D4 / caution-D2 / free",
+    `playground verdicts wait-D4 / caution-D2 / free, world seeded (${open.length} worksites)`,
 );
