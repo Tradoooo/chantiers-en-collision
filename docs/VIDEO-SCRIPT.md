@@ -5,7 +5,7 @@ Recorded draft: site/assets/demo.mp4
 Storyboard: `docs/SPEC.md` §23. The **one-line pitch** (FR + EN) this film expands lives in
 **[`docs/PITCH.md`](PITCH.md)** — do not reword it here. The whole film runs on the **real, deployed**
 Forge app. Until that site exists, the browser demo at
-**https://baptistefaisy.github.io/chantiers-en-collision/** is a drop-in visual
+**https://tradoooo.github.io/chantiers-en-collision/** is a drop-in visual
 for any map / verdict / four-agents shot: it runs the same engine and both the
 playground and the "Four agents" scenario replay live.
 

@@ -8,7 +8,7 @@
 #   npm run deploy:site
 #
 # The site is then public at:
-#   https://baptistefaisy.github.io/chantiers-en-collision/
+#   https://tradoooo.github.io/chantiers-en-collision/
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -40,4 +40,4 @@ fi
 
 cd "$REPO_DIR"
 git worktree remove --force "$WT" 2>/dev/null || true
-echo "==> https://baptistefaisy.github.io/chantiers-en-collision/"
+echo "==> https://tradoooo.github.io/chantiers-en-collision/"

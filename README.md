@@ -2,7 +2,7 @@
 
 Forge app for Jira · **Codegeist 2026**, category *Apps for Software Teams* · MIT licence.
 
-[![Live demo](https://img.shields.io/badge/live%20demo-Open%20the%20site-58a6ff)](https://baptistefaisy.github.io/chantiers-en-collision/)
+[![Live demo](https://img.shields.io/badge/live%20demo-Open%20the%20site-58a6ff)](https://tradoooo.github.io/chantiers-en-collision/)
 
 > Jira knows, at every instant, who is working on which part of the code — people and agents
 > alike. Every work in progress has a **footprint** on the repository. Every overlap is
@@ -13,7 +13,7 @@ Forge app for Jira · **Codegeist 2026**, category *Apps for Software Teams* · 
 
 ## The live demo
 
-**<https://baptistefaisy.github.io/chantiers-en-collision/>** — no install, no Jira, works on
+**<https://tradoooo.github.io/chantiers-en-collision/>** — no install, no Jira, works on
 mobile. The page runs the **real engine** compiled for the browser and reads the **real data of
 the deployment** (`/demo/verdict`, `/demo/state`): the verdict a judge reads is the one the
 deployed engine computed on the actual `acme/billing` worksites, refreshed every 10 s. If the

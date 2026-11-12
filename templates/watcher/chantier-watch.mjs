@@ -39,7 +39,8 @@ import {
 } from "../chantiers-lib/payload.mjs";
 
 const IGNORED_SEGMENTS = new Set([".git", "node_modules", "dist", ".chantier"]);
-const FETCH_MS = 3000;
+/** The app answers in ~1 s when warm, but a cold web trigger can take longer. */
+const FETCH_MS = 10000;
 const CLOSE_MS = 1500;
 
 /* ---------------------------------------------------------- config ------ */
@@ -88,28 +89,32 @@ function readConfig() {
 
 /** POST {base}/{route} with a hard timeout. Never throws: returns undefined. */
 async function post(cfg, route, body, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const headers = buildHookHeaders(cfg.token, cfg.repo);
-    const res = await fetch(`${cfg.base}/${route}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    const raw = await res.text();
-    if (!raw.trim()) return undefined;
+  // A cold Forge web trigger can take longer than the timeout: one retry.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return JSON.parse(raw);
+      const headers = buildHookHeaders(cfg.token, cfg.repo);
+      const res = await fetch(`${cfg.base}/${route}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const raw = await res.text();
+      if (!raw.trim()) return undefined;
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return undefined;
+      }
     } catch {
-      return undefined;
+      if (attempt === 1) return undefined;
+    } finally {
+      clearTimeout(timer);
     }
-  } catch {
-    return undefined;
-  } finally {
-    clearTimeout(timer);
   }
+  return undefined;
 }
 
 /** Print the useful part of a hook response on stdout, prefixed and visible. */

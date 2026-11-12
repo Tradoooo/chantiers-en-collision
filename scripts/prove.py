@@ -31,7 +31,7 @@ WEBTRIGGER = (
     "CMqSJpepH37pD_ux7w8m_3P7BEQ"
 )
 MCP_ENDPOINT = "https://mcp.atlassian.com/forge/2ef208cc-6621-42a7-8557-5ce5ab3f6882"
-SITE = "https://baptistefaisy.github.io/chantiers-en-collision/"
+SITE = "https://tradoooo.github.io/chantiers-en-collision/"
 
 
 def creds():
@@ -211,7 +211,8 @@ def main():
         time.sleep(5)
         with open(f"{tmp}/src/billing/invoice.ts", "a") as fh:
             fh.write("touched\n")
-        time.sleep(10)
+        # The web trigger can be cold: give the watcher time to retry.
+        time.sleep(20)
         proc.terminate()
         try:
             watcher_out = proc.communicate(timeout=10)[0]

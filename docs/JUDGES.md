@@ -2,7 +2,7 @@
 
 ## Route 0 — start here: the site
 
-**<https://baptistefaisy.github.io/chantiers-en-collision/>** — the single entry point for a judge,
+**<https://tradoooo.github.io/chantiers-en-collision/>** — the single entry point for a judge,
 no install, no Jira, nothing to run. The page is the **deployed** Forge app, not a mock:
 
 - **Playground** — two agents declare footprints and you read the verdict (presets: same file →
