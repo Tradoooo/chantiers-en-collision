@@ -73,21 +73,45 @@ def jira(method, path, body=None):
         return json.loads(raw) if raw else None
 
 
+def fetch(url, timeout=60, retries=2):
+    """GET a public URL, tolerant to a cold start: retries, empty on failure."""
+    for attempt in range(1, retries + 1):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as resp:
+                return resp.read()
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == retries:
+                return b""
+    return b""
+
+
 def wt(route, body=None, token=PERSONAL):
-    req = urllib.request.Request(
-        f"{WEBTRIGGER}/{route}",
-        data=json.dumps(body or {}).encode(),
-        method="POST",
-    )
-    req.add_header("Authorization", f"Bearer {token}")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("X-Chantier-Repo", "acme/billing")
-    try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            raw = resp.read()
-            return json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as e:
-        return {"httpError": e.code, "body": e.read().decode()[:200]}
+    # The web trigger is fail-open and can cold-start: give it room and retry
+    # once on a transient (empty/timeout), so a slow verdict never kills a run.
+    for attempt in (1, 2):
+        req = urllib.request.Request(
+            f"{WEBTRIGGER}/{route}",
+            data=json.dumps(body or {}).encode(),
+            method="POST",
+        )
+        req.add_header("Authorization", f"Bearer {token}")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("X-Chantier-Repo", "acme/billing")
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                raw = resp.read()
+                if raw:
+                    return json.loads(raw)
+                if attempt == 2:
+                    return {}
+                continue
+        except urllib.error.HTTPError as e:
+            return {"httpError": e.code, "body": e.read().decode()[:200]}
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == 2:
+                return {}
+            continue
+    return {}
 
 
 def run(cmd, timeout=120, env=None):
@@ -105,14 +129,25 @@ def main():
     row = [l for l in out.splitlines() if "one-atlas-cndz" in l]
     proof("P1 deployment installed & up-to-date (Jira site)", "Up-to-date" in out, (row[0] if row else out)[-160:])
 
-    # P2 — public proof route
-    with urllib.request.urlopen(f"{WEBTRIGGER}/proof", timeout=20) as resp:
-        proof_payload = json.loads(resp.read())
+    # P2 — public proof route. The web trigger is fail-open: a cold start
+    # answers 200 with an empty body, so a transient must not kill the run.
+    payload_text = ""
+    try:
+        with urllib.request.urlopen(f"{WEBTRIGGER}/proof", timeout=40) as resp:
+            payload_text = resp.read().decode("utf-8", "replace")
+        proof_payload = json.loads(payload_text)
+    except Exception as err:  # noqa: BLE001 — the proof must report, not crash
+        proof_payload = {}
+        payload_text = payload_text or f"{type(err).__name__}: {err}"
     proof(
         "P2 public /proof route (aggregate counters)",
         proof_payload.get("ok") is True,
-        f"worksites={proof_payload.get('worksites')} collisions={proof_payload.get('collisions')} "
-        f"events={proof_payload.get('events')} lastEvent={proof_payload.get('lastEvent')}",
+        (
+            f"worksites={proof_payload.get('worksites')} collisions={proof_payload.get('collisions')} "
+            f"events={proof_payload.get('events')} lastEvent={proof_payload.get('lastEvent')}"
+        )
+        if proof_payload
+        else payload_text[-160:],
     )
 
     # P3 — real tickets in the Jira project
@@ -246,13 +281,17 @@ def main():
         mcp_state = "200 (exposed)"
     except urllib.error.HTTPError as e:
         mcp_state = f"{e.code} " + ("OAuth 2.1" if "www-authenticate" in {k.lower() for k in e.headers} else "")
+    except (urllib.error.URLError, TimeoutError):
+        mcp_state = "unreachable (transient)"
     code, out = run("gh api repos/BaptisteFaisy/billing-demo --jq .visibility", timeout=60)
     proof("P12 judge routes: MCP endpoint + sample repo", out.strip() in ("public", "PUBLIC") or mcp_state.startswith("401"),
           f"MCP {mcp_state} · billing-demo {out.strip()}")
 
     # P13 — the public demo route serves the REAL worksites of the deployment
-    with urllib.request.urlopen(f"{WEBTRIGGER}/demo/state?repo=acme/billing", timeout=20) as resp:
-        demo_state = json.loads(resp.read())
+    try:
+        demo_state = json.loads(fetch(f"{WEBTRIGGER}/demo/state?repo=acme/billing") or b"{}")
+    except Exception:  # noqa: BLE001 — a proof must report, not crash
+        demo_state = {}
     live_ws = demo_state.get("worksites", [])
     proof("P13 public /demo/state = live worksites of the deployment",
           demo_state.get("ok") is True and len(live_ws) > 0,
@@ -266,8 +305,7 @@ def main():
           f"verdict {demo_verdict.get('verdict')} · " + (f"D{demo_collisions[0]['degree']} vs {demo_collisions[0]['neighborIssueKey']}" if demo_collisions else "no collision"))
 
     # P15 — the public site is really wired to the deployment
-    with urllib.request.urlopen(f"{SITE}demo.js", timeout=30) as resp:
-        bundle = resp.read().decode()
+    bundle = fetch(f"{SITE}demo.js", timeout=60).decode("utf-8", "replace")
     wired = "/demo/verdict" in bundle and "/demo/state" in bundle
     proof("P15 the public site calls the deployment (live routes in the bundle)", wired,
           f"/demo/verdict in bundle: {'/demo/verdict' in bundle} · /demo/state in bundle: {'/demo/state' in bundle}")
