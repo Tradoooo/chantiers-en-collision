@@ -384,17 +384,28 @@ install --upgrade → test**.
 Also: `forge deploy` packages the **committed** state (git HEAD), not the
 working tree — uncommitted changes are not deployed.
 
-## Le runner CI (r630)
+## Le runner CI
 
-The CI jobs run on a self-hosted runner on **r630** with the label
-`chantiers-en-collision-worker`. The working one (since 2026-11-13) is the
-**repo-level** runner `r630-chantiers-repo-01`; the legacy org-level runner
-`r630-chantiers-en-collision-01` is kept but carries a permanent zombie session
-(see « The fix that stuck » below).
+**Depuis le 2026-11-13 (commit `1e0cb27`), les jobs `ci` tournent sur des
+runners GitHub-hosted (`ubuntu-latest`).** Le repo est public : le fallback
+hébergé ne coûte rien et passe en secondes. Le runner self-hosted est donc
+**optionnel** — s'il revient, il doit porter le label
+`chantiers-en-collision-worker`.
 
 ```bash
-node scripts/check-runner.mjs     # diagnostic : runner en ligne ? runner fantôme ? job bloqué ?
+node scripts/check-runner.mjs     # diagnostic : le CI est-il vert ? runner fantôme ? job bloqué ?
 ```
+
+Le script lit ce que le workflow demande vraiment (`.github/workflows/ci.yml`)
+et n'échoue que si **le CI n'est pas vert** ; un runner self-hosted absent n'est
+plus un problème en mode hébergé.
+
+### Historique (le runner r630, pour mémoire)
+
+Les jobs tournaient sur un runner self-hosted de **r630**. Le working one
+(depuis 2026-11-13) était le runner **repo-level** `r630-chantiers-repo-01` ;
+le runner org-level `r630-chantiers-en-collision-01` était conservé mais portait
+une session zombie permanente (voir « The fix that stuck » plus bas).
 
 Three defects have happened, all visible in that script:
 
