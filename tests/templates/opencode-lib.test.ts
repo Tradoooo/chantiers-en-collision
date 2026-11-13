@@ -93,40 +93,7 @@ describe("body builders — re-exported from the shared core", () => {
 });
 
 describe("parseHookResponse", () => {
-  it("reads additionalContext", () => {
-    const json = { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: "verdict: free" } };
-    expect(lib.parseHookResponse(json)).toEqual({ context: "verdict: free" });
-  });
-
-  it("reads a deny decision and its reason", () => {
-    const json = {
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        permissionDecision: "deny",
-        permissionDecisionReason: "zone frozen",
-      },
-    };
-    expect(lib.parseHookResponse(json)).toEqual({ deny: true, reason: "zone frozen" });
-  });
-
-  it("returns nothing for an empty answer", () => {
-    expect(lib.parseHookResponse(undefined)).toEqual({});
-    expect(lib.parseHookResponse("")).toEqual({});
-    expect(lib.parseHookResponse({})).toEqual({});
-  });
-
-  it("returns nothing for invalid JSON", () => {
-    expect(lib.parseHookResponse("{not json")).toEqual({});
-  });
-
-  it("accepts a raw body as a string", () => {
-    const raw = JSON.stringify({ hookSpecificOutput: { additionalContext: "verdict: wait" } });
-    expect(lib.parseHookResponse(raw)).toEqual({ context: "verdict: wait" });
-  });
-
-  it("gives a deny without a reason a default one", () => {
-    const json = { hookSpecificOutput: { permissionDecision: "deny" } };
-    expect(lib.parseHookResponse(json).deny).toBe(true);
-    expect(lib.parseHookResponse(json).reason).toBe("edit blocked by the app");
+  it("is re-exported from the shared payload module", () => {
+    expect(typeof lib.parseHookResponse).toBe("function");
   });
 });

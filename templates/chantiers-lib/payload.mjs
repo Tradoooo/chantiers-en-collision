@@ -164,3 +164,44 @@ export async function postJson(base, route, body, { token, repo, timeoutMs = FET
   }
   return undefined;
 }
+
+/**
+ * Read the app's answer to a hook call (the hook JSON of spec §9.3):
+ *   { hookSpecificOutput: { hookEventName, additionalContext?,
+ *                           permissionDecision: "deny",
+ *                           permissionDecisionReason } }
+ *
+ * Accepts the raw body (string) or an already parsed object. Anything that is
+ * not understood yields `{}` — the caller then simply continues. Shared by the
+ * watcher, the OpenCode plugin and the MCP bridge so all three read one shape.
+ *
+ * @param {unknown} json
+ * @returns {{context?: string, deny?: boolean, reason?: string}}
+ */
+export function parseHookResponse(json) {
+  const raw = typeof json === "string" ? safeParse(json) : json;
+  if (!raw || typeof raw !== "object") return {};
+  const hook = raw.hookSpecificOutput;
+  const out = hook && typeof hook === "object" ? hook : raw;
+  const result = {};
+  if (typeof out.additionalContext === "string" && out.additionalContext.trim() !== "") {
+    result.context = out.additionalContext;
+  }
+  if (out.permissionDecision === "deny") {
+    result.deny = true;
+    result.reason =
+      typeof out.permissionDecisionReason === "string" && out.permissionDecisionReason.trim() !== ""
+        ? out.permissionDecisionReason
+        : "edit blocked by the app";
+  }
+  return result;
+}
+
+/** JSON.parse that never throws. */
+function safeParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}

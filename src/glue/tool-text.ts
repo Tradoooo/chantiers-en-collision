@@ -28,7 +28,7 @@ import type {
   WorksitePanel,
 } from "../core/types";
 import { t } from "../i18n/format";
-import { minutesBetween } from "../testing/clock";
+import { minutesBetween } from "../core/time";
 
 /** A collision with both sides resolved to neighbour info (glue enrichment). */
 export interface CollisionRow {

@@ -22,7 +22,7 @@ import ForgeUI, {
   Text,
 } from "@forge/ui";
 import type { ActorSession, Worksite } from "../core/types";
-import { minutesBetween } from "../testing/clock";
+import { minutesBetween } from "../core/time";
 import { StateLozenge } from "./components";
 import { useActionBridge } from "./projectSettings";
 import type { ActionRouter } from "./issuePanel";

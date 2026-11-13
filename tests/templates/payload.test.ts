@@ -130,3 +130,42 @@ describe("defaultSession — the session reference", () => {
     expect(payload.defaultSession()).not.toBe(payload.defaultSession());
   });
 });
+
+describe("parseHookResponse — the app's hook JSON", () => {
+  it("reads additionalContext", () => {
+    const json = { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: "verdict: free" } };
+    expect(payload.parseHookResponse(json)).toEqual({ context: "verdict: free" });
+  });
+
+  it("reads a deny decision and its reason", () => {
+    const json = {
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: "zone frozen",
+      },
+    };
+    expect(payload.parseHookResponse(json)).toEqual({ deny: true, reason: "zone frozen" });
+  });
+
+  it("returns nothing for an empty answer", () => {
+    expect(payload.parseHookResponse(undefined)).toEqual({});
+    expect(payload.parseHookResponse("")).toEqual({});
+    expect(payload.parseHookResponse({})).toEqual({});
+  });
+
+  it("returns nothing for invalid JSON", () => {
+    expect(payload.parseHookResponse("{not json")).toEqual({});
+  });
+
+  it("accepts a raw body as a string", () => {
+    const raw = JSON.stringify({ hookSpecificOutput: { additionalContext: "verdict: wait" } });
+    expect(payload.parseHookResponse(raw)).toEqual({ context: "verdict: wait" });
+  });
+
+  it("gives a deny without a reason a default one", () => {
+    const json = { hookSpecificOutput: { permissionDecision: "deny" } };
+    expect(payload.parseHookResponse(json).deny).toBe(true);
+    expect(payload.parseHookResponse(json).reason).toBe("edit blocked by the app");
+  });
+});

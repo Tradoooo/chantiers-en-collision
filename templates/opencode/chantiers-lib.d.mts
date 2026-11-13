@@ -19,6 +19,7 @@ export {
   FETCH_TIMEOUT_MS,
   CLOSE_TIMEOUT_MS,
   postJson,
+  parseHookResponse,
 } from "../chantiers-lib/payload.mjs";
 
 export declare const WRITE_TOOLS: readonly string[];
@@ -27,9 +28,3 @@ export declare const PATH_KEYS: readonly string[];
 export declare function extractFilePath(toolName: string, args: unknown): string | undefined;
 
 export declare function ticketKeyOf(branch: string): string | undefined;
-
-export declare function parseHookResponse(json: unknown): {
-  context?: string;
-  deny?: boolean;
-  reason?: string;
-};

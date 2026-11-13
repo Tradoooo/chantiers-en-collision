@@ -32,7 +32,7 @@ import {
   reasonForCollision,
   verdictKindFor,
 } from "../core/verdict";
-import { minutesBetween } from "../testing/clock";
+import { minutesBetween } from "../core/time";
 import { normalizePath } from "../core/paths";
 import type { Ctx } from "./ctx";
 

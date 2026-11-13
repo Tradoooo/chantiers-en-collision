@@ -26,7 +26,7 @@ import type {
   Verdict,
   WorksiteState,
 } from "../core/types";
-import { minutesBetween } from "../testing/clock";
+import { minutesBetween } from "../core/time";
 
 /* ------------------------------------------------------------------ */
 

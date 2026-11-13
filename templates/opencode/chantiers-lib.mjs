@@ -13,11 +13,11 @@
  *
  * What stays here is what is specific to the plugin:
  *   - the write tools it watches, and the path they carry,
- *   - the ticket key carried by a branch name,
- *   - the reading of the app's answer (the hook JSON of spec §9.3):
- *     { hookSpecificOutput: { hookEventName, additionalContext?,
- *                             permissionDecision: "deny",
- *                             permissionDecisionReason } }
+ *   - the ticket key carried by a branch name.
+ *
+ * The reading of the app's answer (the hook JSON of spec §9.3) moved to the
+ * shared `payload.mjs` (`parseHookResponse`) and is re-exported below, so the
+ * watcher, the plugin and the MCP bridge read the same hook JSON.
  */
 
 export {
@@ -31,6 +31,7 @@ export {
   FETCH_TIMEOUT_MS,
   CLOSE_TIMEOUT_MS,
   postJson,
+  parseHookResponse,
 } from "../chantiers-lib/payload.mjs";
 
 /** Tools that write to the filesystem. `bash` is deliberately absent. */
@@ -71,41 +72,4 @@ export function ticketKeyOf(branch) {
   if (typeof branch !== "string" || branch === "") return undefined;
   const match = branch.match(TICKET_KEY);
   return match === null ? undefined : match[1];
-}
-
-/**
- * Read the app's answer to a hook call.
- *
- * Accepts the raw body (string) or an already parsed object. Anything that
- * is not understood yields `{}` — the caller then simply continues.
- *
- * @param {unknown} json
- * @returns {{context?: string, deny?: boolean, reason?: string}}
- */
-export function parseHookResponse(json) {
-  const raw = typeof json === "string" ? safeParse(json) : json;
-  if (!raw || typeof raw !== "object") return {};
-  const hook = raw.hookSpecificOutput;
-  const out = hook && typeof hook === "object" ? hook : raw;
-  const result = {};
-  if (typeof out.additionalContext === "string" && out.additionalContext.trim() !== "") {
-    result.context = out.additionalContext;
-  }
-  if (out.permissionDecision === "deny") {
-    result.deny = true;
-    result.reason =
-      typeof out.permissionDecisionReason === "string" && out.permissionDecisionReason.trim() !== ""
-        ? out.permissionDecisionReason
-        : "edit blocked by the app";
-  }
-  return result;
-}
-
-/** JSON.parse that never throws. */
-function safeParse(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
 }

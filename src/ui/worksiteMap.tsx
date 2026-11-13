@@ -23,7 +23,7 @@ import type {
   WorksiteMapData,
   ZoneNature,
 } from "../core/types";
-import { minutesBetween } from "../testing/clock";
+import { minutesBetween } from "../core/time";
 import { DegreeLozenge, StateLozenge } from "./components";
 
 type BadgeAppearance = "default" | "added" | "removed" | "important" | "primary";

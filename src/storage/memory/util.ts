@@ -2,9 +2,11 @@
  * storage/memory/util — small helpers shared by the memory stores.
  */
 
+import { nowISO } from "../../core/time";
+
 /** Current time as an ISO-8601 string (the SQL stores would use NOW()). */
 export function nowIso(): string {
-  return new Date().toISOString();
+  return nowISO();
 }
 
 /**

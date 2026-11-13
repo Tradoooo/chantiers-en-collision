@@ -37,3 +37,19 @@ export declare function buildHookHeaders(
 ): Record<string, string>;
 
 export declare function defaultSession(prefix?: string): string;
+
+export declare const FETCH_TIMEOUT_MS: number;
+export declare const CLOSE_TIMEOUT_MS: number;
+
+export declare function postJson(
+  base: string,
+  route: string,
+  body: object,
+  opts?: { token: string; repo?: string; timeoutMs?: number },
+): Promise<unknown>;
+
+export declare function parseHookResponse(json: unknown): {
+  context?: string;
+  deny?: boolean;
+  reason?: string;
+};

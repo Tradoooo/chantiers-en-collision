@@ -4,7 +4,7 @@
  */
 
 import { dictFor, format } from "../i18n/format";
-import { minutesBetween } from "../testing/clock";
+import { minutesBetween } from "./time";
 import type {
   Locale,
   MsgId,

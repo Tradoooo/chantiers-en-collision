@@ -14,6 +14,7 @@ import {
   MAX_RESERVATION_MINUTES,
 } from "./types";
 import type { Reservation, Worksite, WorksiteState } from "./types";
+import { minutesBetween, plusMinutes } from "./time";
 
 const MINUTES_PER_HOUR = 60;
 const MINUTES_PER_DAY = 24 * 60;
@@ -26,24 +27,17 @@ const DORMANT_CANDIDATES: ReadonlySet<WorksiteState> = new Set<WorksiteState>([
   "paused",
 ]);
 
-function minutesSince(from: string, to: string): number {
-  return (new Date(to).getTime() - new Date(from).getTime()) / 60_000;
-}
-
-function plusMinutes(from: string, minutes: number): string {
-  return new Date(new Date(from).getTime() + minutes * 60_000).toISOString();
-}
-
-/** No activity since `dormancyHours` (planned/open/active/paused only). */
+/**
+ * No activity since `dormancyHours` (planned/open/active/paused only). */
 export function isDormant(w: Worksite, now: string, dormancyHours: number): boolean {
   if (!DORMANT_CANDIDATES.has(w.state)) return false;
-  return minutesSince(w.lastActivityAt, now) >= dormancyHours * MINUTES_PER_HOUR;
+  return minutesBetween(w.lastActivityAt, now) >= dormancyHours * MINUTES_PER_HOUR;
 }
 
 /** Dormant for DORMANT_CLOSE_DAYS or more → close (no ghost worksites). */
 export function shouldAutoClose(w: Worksite, now: string): boolean {
   if (w.state !== "dormant") return false;
-  return minutesSince(w.lastActivityAt, now) >= DORMANT_CLOSE_DAYS * MINUTES_PER_DAY;
+  return minutesBetween(w.lastActivityAt, now) >= DORMANT_CLOSE_DAYS * MINUTES_PER_DAY;
 }
 
 /** State reached on activity: a dormant/paused/open site resumes working. */
@@ -90,6 +84,6 @@ export function reservationExpiry(now: string, minutes?: number): string {
  * duration, still clamped to the max cap from `now` (nothing eternal).
  */
 export function extendReservation(r: Reservation, now: string): string {
-  const original = Math.max(1, Math.floor(minutesSince(r.createdAt, r.expiresAt)));
+  const original = Math.max(1, minutesBetween(r.createdAt, r.expiresAt));
   return reservationExpiry(now, original);
 }
