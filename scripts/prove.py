@@ -142,12 +142,32 @@ def run(cmd, timeout=120, env=None):
         return 124, "timeout"
 
 
+# The Atlassian Forge CLI is `forge-atlassian` (v14) or `forge` (v15), but on a
+# dev box `forge` is often FOUNDRY's binary (a Rust toolchain manager). Probing
+# the candidates is the only reliable way to tell them apart.
+FORGE_CLI_CANDIDATES = ("forge-atlassian", "forge")
+
+
+def forge_cli():
+    """Return (path, output_of_install_list) for the Atlassian Forge CLI."""
+    fallback = None
+    for candidate in FORGE_CLI_CANDIDATES:
+        path = shutil.which(candidate)
+        if not path:
+            continue
+        if fallback is None:
+            fallback = path
+        code, out = run(f"{path} install list", timeout=90)
+        if "Installation ID" in out or "atlassian" in out.lower():
+            return path, out
+    if fallback:
+        return fallback, run(f"{fallback} install list", timeout=90)[1]
+    return "forge", ""
+
+
 def main():
     # P1 — the app is installed and up to date on the Jira site.
-    # The CLI is `forge` since v15 (`forge-atlassian` was the old alias):
-    # take whichever is installed.
-    forge_cmd = shutil.which("forge") or shutil.which("forge-atlassian") or "forge"
-    code, out = run(f"{forge_cmd} install list", timeout=90)
+    forge_cmd, out = forge_cli()
     row = [l for l in out.splitlines() if "one-atlas-cndz" in l]
     proof("P1 deployment installed & up-to-date (Jira site)", "Up-to-date" in out, (row[0] if row else out)[-160:])
 
