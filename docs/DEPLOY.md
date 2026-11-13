@@ -383,3 +383,35 @@ install --upgrade → test**.
 
 Also: `forge deploy` packages the **committed** state (git HEAD), not the
 working tree — uncommitted changes are not deployed.
+
+## Le runner CI (r630)
+
+The CI jobs run on the self-hosted runner `r630-chantiers-en-collision-01`
+(labels `chantiers-en-collision-worker`, `ci-node`), hosted on **r630**.
+
+```bash
+node scripts/check-runner.mjs     # diagnostic : runner en ligne ? runner fantôme ? job bloqué ?
+```
+
+Three defects have happened, all visible in that script:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| The runner is `online` but never takes a job | a **ghost runner** registered at the repo level with the same name shadows the healthy org-level one | `gh api --method DELETE repos/Tradoooo/chantiers-en-collision/actions/runners/<id>` |
+| The listener loops on *"A session for this runner already exists"* | a **zombie session** after a crash | stop the service, wait ~2 min (GitHub expires the session), start it again |
+| The runner connects but is never dispatched | **stale credentials** after a repo transfer | re-register it: fresh org registration token + `./config.sh --unattended --replace` |
+
+The service (on r630, user level):
+
+```bash
+systemctl --user status  actions-runner-chantiers-en-collision-01
+journalctl --user -u actions-runner-chantiers-en-collision-01 -n 40 --no-pager
+systemctl --user restart actions-runner-chantiers-en-collision-01
+```
+
+**When the job stays `queued` while the runner is `online`, the dispatch is stuck
+on GitHub's side, not on the code.** The proof: a job on a GitHub-hosted runner
+(`ubuntu-latest`) passes in seconds while the self-hosted one waits. The repo is
+public, so a hosted fallback costs nothing. Meanwhile the local gate stays the
+reference: `npm run verify` (lint, typecheck, manifest, storage parity, 407
+tests, site bundle).

@@ -287,14 +287,27 @@ def main():
     proof("P10 public site serves the full tour + the video", sections and video == 200,
           f"sections ok={sections} · demo.mp4 HTTP {video}")
 
-    # P11 — CI green on HEAD
-    code, out = run("gh run list --workflow ci.yml --limit 1 --json conclusion,headSha", timeout=60)
+    # P11 — CI green on HEAD. When it is not green, say WHY: a queued job
+    # means the dispatch is stuck (GitHub side), not that the code is broken.
+    head = run("git rev-parse HEAD")[1].strip()
+    code, out = run("gh run list --workflow ci.yml --limit 5 --json conclusion,headSha,status,createdAt", timeout=60)
     try:
-        run_info = json.loads(out)[0]
-    except (json.JSONDecodeError, IndexError):
-        run_info = {}
-    proof("P11 CI green on HEAD", run_info.get("conclusion") == "success",
-          f"{run_info.get('headSha', '')[:7]} → {run_info.get('conclusion')}")
+        runs = json.loads(out)
+    except json.JSONDecodeError:
+        runs = []
+    mine = next((r for r in runs if r.get("headSha", "").startswith(head[:7])), {})
+    if mine.get("conclusion") == "success":
+        proof("P11 CI green on HEAD", True, f"{head[:7]} → success")
+    else:
+        runner_state = run(
+            "gh api orgs/Tradoooo/actions/runners --paginate "
+            "--jq '[.runners[] | select(.name==\"r630-chantiers-en-collision-01\") | .status] | join(\",\")'"
+        )[1].strip()
+        proof("P11 CI green on HEAD", False,
+              f"{head[:7]} → {mine.get('status', 'inconnu')}/{mine.get('conclusion') or 'en cours'}"
+              f" · runner r630-chantiers-en-collision-01 : {runner_state or 'absent'}"
+              " (si le job est 'queued' malgré un runner en ligne, le dispatch GitHub est bloqué :"
+              " le code est validé par 'npm run verify' en local)")
 
     # P12 — the judge routes answer
     try:
