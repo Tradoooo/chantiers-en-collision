@@ -16,6 +16,7 @@ Credentials are read like everywhere else (never printed):
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -142,8 +143,11 @@ def run(cmd, timeout=120, env=None):
 
 
 def main():
-    # P1 — the app is installed and up to date on the Jira site
-    code, out = run("forge-atlassian install list", timeout=90)
+    # P1 — the app is installed and up to date on the Jira site.
+    # The CLI is `forge` since v15 (`forge-atlassian` was the old alias):
+    # take whichever is installed.
+    forge_cmd = shutil.which("forge") or shutil.which("forge-atlassian") or "forge"
+    code, out = run(f"{forge_cmd} install list", timeout=90)
     row = [l for l in out.splitlines() if "one-atlas-cndz" in l]
     proof("P1 deployment installed & up-to-date (Jira site)", "Up-to-date" in out, (row[0] if row else out)[-160:])
 
