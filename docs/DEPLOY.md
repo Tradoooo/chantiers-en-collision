@@ -386,8 +386,11 @@ working tree — uncommitted changes are not deployed.
 
 ## Le runner CI (r630)
 
-The CI jobs run on the self-hosted runner `r630-chantiers-en-collision-01`
-(labels `chantiers-en-collision-worker`, `ci-node`), hosted on **r630**.
+The CI jobs run on a self-hosted runner on **r630** with the label
+`chantiers-en-collision-worker`. The working one (since 2026-11-13) is the
+**repo-level** runner `r630-chantiers-repo-01`; the legacy org-level runner
+`r630-chantiers-en-collision-01` is kept but carries a permanent zombie session
+(see « The fix that stuck » below).
 
 ```bash
 node scripts/check-runner.mjs     # diagnostic : runner en ligne ? runner fantôme ? job bloqué ?
@@ -408,6 +411,35 @@ systemctl --user status  actions-runner-chantiers-en-collision-01
 journalctl --user -u actions-runner-chantiers-en-collision-01 -n 40 --no-pager
 systemctl --user restart actions-runner-chantiers-en-collision-01
 ```
+
+### The fix that stuck (2026-11-13): a repo-level runner
+
+The org-level `r630-chantiers-en-collision-01` fell into a **permanent** zombie
+session that no restart could clear, and re-registering it needs org admin
+(`admin:org`), which the deploy token does not have. What works is a
+**repo-level** runner, `r630-chantiers-repo-01`, whose registration only needs
+repo admin:
+
+```bash
+cd ~/runner-chantiers-repo
+export PATH=$HOME/.local/bin:$PATH
+TOKEN=$(gh api -X POST repos/Tradoooo/chantiers-en-collision/actions/runners/registration-token --jq .token)
+./config.sh --url https://github.com/Tradoooo/chantiers-en-collision \
+  --token "$TOKEN" --name r630-chantiers-repo-01 \
+  --labels chantiers-en-collision-worker --unattended --replace
+```
+
+It runs as the systemd --user unit `actions-runner-chantiers-repo-01.service`
+(`Restart=always`, `WantedBy=default.target`, linger on → survives reboot):
+
+```bash
+systemctl --user status  actions-runner-chantiers-repo-01
+systemctl --user restart actions-runner-chantiers-repo-01
+```
+
+A repo-level runner belongs to no runner group, so it is immune to the org-level
+dispatch bug; its name differs from the org runner, so it is **not** the "ghost"
+of defect #2. First green run after the switch: `c2e4ee9` (all five jobs).
 
 **When the job stays `queued` while the runner is `online`, the dispatch is stuck
 on GitHub's side, not on the code.** The proof: a job on a GitHub-hosted runner
