@@ -18,6 +18,7 @@
 |---|---|---|
 | [`docs/SPEC.md`](SPEC.md) | product, judges | the specification (FR): what the app does, the degrees, the verdicts, the 28 requirements |
 | [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) | dev, reviewer | how it is built: modules, footprint sources, hook, tables, Forge SQL limits |
+| [`docs/SCHEMA.md`](SCHEMA.md) | dev, reviewer | the 14 tables and their indexes, on one page (source: `src/storage/schema.ts`) |
 | [`docs/CONTRACTS.md`](CONTRACTS.md) | dev | the module map and the ground rules, to read before writing a line |
 | [`docs/IDEAS.md`](IDEAS.md) | contributors | the backlog: 100 ideas, feature freeze on 15 December |
 
