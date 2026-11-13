@@ -65,6 +65,8 @@ export interface WorksiteStore {
   create(w: Omit<Worksite, "id"> & { id?: string }): Promise<Worksite>;
   update(id: string, patch: Partial<Worksite>): Promise<Worksite | undefined>;
   findById(id: string): Promise<Worksite | undefined>;
+  /** Several worksites by id — ONE query (the demo route resolves two per collision). */
+  findByIds(ids: string[]): Promise<Worksite[]>;
   /** The open-ish worksite of a session (agents) — most recent non-closed. */
   findBySession(sessionId: string): Promise<Worksite | undefined>;
   /** Open-ish worksites for a ticket in a repo (optionally one session). */
@@ -84,6 +86,8 @@ export interface FootprintStore {
   /** Add or refresh entries (same worksiteId+path → update lastAt, widen source/mode). */
   add(entries: FootprintEntryInput[]): Promise<FootprintEntry[]>;
   listByWorksite(worksiteId: string): Promise<FootprintEntry[]>;
+  /** Every footprint of a repo — ONE indexed query on repo_id (the demo route). */
+  listByRepo(repoId: string): Promise<FootprintEntry[]>;
   /**
    * Entries whose path equals, contains, or is contained by `path`
    * (patterns matched as globs), limited to `repoId` — served by the

@@ -54,6 +54,15 @@ async function findWorksiteById(data: MemoryData, id: string): Promise<Worksite 
   return w ? clone(w) : undefined;
 }
 
+async function findWorksitesByIds(data: MemoryData, ids: string[]): Promise<Worksite[]> {
+  const out: Worksite[] = [];
+  for (const id of ids) {
+    const w = data.worksites.get(id);
+    if (w) out.push(clone(w));
+  }
+  return out;
+}
+
 async function findWorksiteBySession(
   data: MemoryData,
   sessionId: string,
@@ -104,6 +113,7 @@ export function createWorksiteStore(data: MemoryData, ids: IdGen): WorksiteStore
     create: (w) => createWorksite(data, ids, w),
     update: (id, patch) => updateWorksite(data, id, patch),
     findById: (id) => findWorksiteById(data, id),
+    findByIds: (ids) => findWorksitesByIds(data, ids),
     findBySession: (sessionId) => findWorksiteBySession(data, sessionId),
     findByIssue: (issueKey, repoId, sessionId) =>
       findWorksitesByIssue(data, issueKey, repoId, sessionId),

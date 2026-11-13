@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { createMemoryStores } from "../../src/storage/memory";
 import { makeClock } from "../../src/testing/clock";
 import type { Ctx } from "../../src/services/ctx";
+import type { Degree, Worksite } from "../../src/core/types";
 import { routeWebtrigger, type WebtriggerDeps, type WebtriggerRequest } from "../../src/glue/webtrigger";
 
 async function world() {
@@ -116,5 +117,101 @@ describe("/demo/state and /demo/verdict", () => {
     const { ctx } = await world();
     const res = await routeWebtrigger(post("/demo/verdict", { repo: "acme/billing" }), deps(ctx));
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("/demo/state stays bounded whatever the volume", () => {
+  it("resolves hundreds of collisions with a handful of store calls, not thousands", async () => {
+    const stores = createMemoryStores();
+    const clock = makeClock("2026-11-12T09:00:00.000Z");
+    const repo = await stores.repos.ensure("PROJ", "acme/billing");
+    await stores.zones.seedDefaults(repo.id);
+
+    // 30 worksites (one footprint each) and 30 open collisions: a volume
+    // where the old route would have issued ~30 footprint queries + 60
+    // findById calls. It must stay at a constant handful.
+    const ws: Worksite[] = [];
+    for (let i = 0; i < 30; i += 1) {
+      const w = await stores.worksites.create({
+        issueKey: `PROJ-${i}`,
+        repoId: repo.id,
+        accountId: "lea@example.com",
+        kind: "agent",
+        state: "active",
+        branch: `f/${i}`,
+        openedAt: clock.now(),
+        lastActivityAt: clock.now(),
+      });
+      await stores.footprints.add([
+        {
+          worksiteId: w.id,
+          path: `src/f${i}.ts`,
+          kind: "file",
+          source: "declared",
+          mode: "edit",
+          at: clock.now(),
+        },
+      ]);
+      ws.push(w);
+    }
+    for (let i = 0; i < 30; i += 1) {
+      await stores.collisions.upsert({
+        repoId: repo.id,
+        worksiteA: ws[i].id,
+        worksiteB: ws[(i + 1) % 30].id,
+        path: `src/f${i}.ts`,
+        degree: (i % 5) as Degree,
+        rawDegree: (i % 5) as Degree,
+        phase: "live",
+      });
+    }
+
+    let listByWorksiteCalls = 0;
+    let footprintListByRepoCalls = 0;
+    let findByIdCalls = 0;
+    let findByIdsCalls = 0;
+    const fws = stores.footprints.listByWorksite.bind(stores.footprints);
+    stores.footprints.listByWorksite = async (id) => {
+      listByWorksiteCalls += 1;
+      return fws(id);
+    };
+    const fbr = stores.footprints.listByRepo.bind(stores.footprints);
+    stores.footprints.listByRepo = async (id) => {
+      footprintListByRepoCalls += 1;
+      return fbr(id);
+    };
+    const fbid = stores.worksites.findById.bind(stores.worksites);
+    stores.worksites.findById = async (id) => {
+      findByIdCalls += 1;
+      return fbid(id);
+    };
+    const fids = stores.worksites.findByIds.bind(stores.worksites);
+    stores.worksites.findByIds = async (ids) => {
+      findByIdsCalls += 1;
+      return fids(ids);
+    };
+
+    const ctx = {
+      stores,
+      now: () => clock.now(),
+      identity: { accountId: "demo@example.com", kind: "human", client: "demo" },
+      projectId: "PROJ",
+    } as Ctx;
+    const res = await routeWebtrigger(post("/demo/state", { repo: "acme/billing" }), deps(ctx));
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body ?? "{}") as {
+      worksites: unknown[];
+      collisions: unknown[];
+    };
+    expect(body.worksites).toHaveLength(30);
+    expect(body.collisions).toHaveLength(24); // capped at the worst
+
+    // The N+1 is gone: every footprint via ONE repo query, every worksite
+    // resolution via ONE batch query.
+    expect(footprintListByRepoCalls).toBe(1);
+    expect(listByWorksiteCalls).toBe(0);
+    expect(findByIdCalls).toBe(0);
+    expect(findByIdsCalls).toBeGreaterThanOrEqual(1);
+    expect(findByIdsCalls).toBeLessThanOrEqual(3);
   });
 });

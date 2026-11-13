@@ -83,6 +83,14 @@ async function listFootprintsByWorksite(
   return out;
 }
 
+async function listFootprintsByRepo(data: MemoryData, repoId: string): Promise<FootprintEntry[]> {
+  const out: FootprintEntry[] = [];
+  for (const entry of data.footprints.values()) {
+    if (repoOfWorksite(data, entry.worksiteId) === repoId) out.push(clone(entry));
+  }
+  return out;
+}
+
 async function findOverlappingFootprints(
   data: MemoryData,
   repoId: string,
@@ -127,6 +135,7 @@ export function createFootprintStore(data: MemoryData): FootprintStore {
   return {
     add: (entries) => addFootprints(data, entries),
     listByWorksite: (worksiteId) => listFootprintsByWorksite(data, worksiteId),
+    listByRepo: (repoId) => listFootprintsByRepo(data, repoId),
     findOverlapping: (repoId, path, kind) => findOverlappingFootprints(data, repoId, path, kind),
     removeByWorksite: (worksiteId, source) =>
       removeFootprintsByWorksite(data, worksiteId, source),

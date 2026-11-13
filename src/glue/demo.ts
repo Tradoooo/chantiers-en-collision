@@ -55,27 +55,55 @@ async function demoRepo(ctx: Ctx, slug: string) {
   return { repo, ctx: { ...ctx, projectId: repo.projectId } as Ctx };
 }
 
-/** Live state of the demo repository: worksites and open collisions. */
+/** How many collisions the public demo route returns (the site shows 8). */
+export const DEMO_MAX_COLLISIONS = 24;
+
+/**
+ * Live state of the demo repository: worksites and open collisions.
+ *
+ * FOUR queries, whatever the volume of the repo:
+ *   1. the open worksites,
+ *   2. their footprints — ONE indexed query on (repo_id),
+ *   3. the open collisions, capped to the worst ones,
+ *   4. the worksites those collisions point to — ONE `IN` query.
+ *
+ * It used to resolve two worksites per collision (and one footprint list per
+ * worksite): on the demo repo that is ~4 500 round trips, and the deployment
+ * answered "424 Failed Dependency" — the resolver timed out before the
+ * verdict was ready. The demo must answer in seconds, not minutes.
+ */
 export async function demoState(ctx: Ctx, slug: string): Promise<DemoState | undefined> {
   const found = await demoRepo(ctx, slug);
   if (found === undefined) return undefined;
   const { repo, ctx: scoped } = found;
-  const worksites: DemoWorksite[] = [];
-  for (const w of await scoped.stores.worksites.listOpenByRepo(repo.id)) {
-    const entries = await scoped.stores.footprints.listByWorksite(w.id);
-    worksites.push({
-      issueKey: w.issueKey,
-      state: w.state,
-      kind: w.kind,
-      branch: w.branch,
-      paths: entries.map((e) => e.path),
-      lastActivityAt: w.lastActivityAt,
-    });
+
+  const openWorksites = await scoped.stores.worksites.listOpenByRepo(repo.id);
+
+  const pathsByWorksite = new Map<string, string[]>();
+  for (const entry of await scoped.stores.footprints.listByRepo(repo.id)) {
+    const paths = pathsByWorksite.get(entry.worksiteId);
+    if (paths === undefined) pathsByWorksite.set(entry.worksiteId, [entry.path]);
+    else paths.push(entry.path);
   }
+  const worksites: DemoWorksite[] = openWorksites.map((w) => ({
+    issueKey: w.issueKey,
+    state: w.state,
+    kind: w.kind,
+    branch: w.branch,
+    paths: pathsByWorksite.get(w.id) ?? [],
+    lastActivityAt: w.lastActivityAt,
+  }));
+
+  const worst = (await scoped.stores.collisions.listByRepo(repo.id, true))
+    .slice()
+    .sort((a, b) => b.degree - a.degree)
+    .slice(0, DEMO_MAX_COLLISIONS);
+  const wanted = [...new Set(worst.flatMap((c) => [c.worksiteA, c.worksiteB]))];
+  const byId = new Map((await scoped.stores.worksites.findByIds(wanted)).map((w) => [w.id, w]));
   const collisions: DemoCollision[] = [];
-  for (const c of await scoped.stores.collisions.listByRepo(repo.id, true)) {
-    const a = await scoped.stores.worksites.findById(c.worksiteA);
-    const b = await scoped.stores.worksites.findById(c.worksiteB);
+  for (const c of worst) {
+    const a = byId.get(c.worksiteA);
+    const b = byId.get(c.worksiteB);
     if (a === undefined || b === undefined) continue;
     collisions.push({
       issueKeyA: a.issueKey,

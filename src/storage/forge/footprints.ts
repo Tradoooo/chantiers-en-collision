@@ -166,6 +166,12 @@ async function listFootprintsByWorksite(worksiteId: string): Promise<FootprintEn
   return rows.map(toEntry);
 }
 
+async function listFootprintsByRepo(repoId: string): Promise<FootprintEntry[]> {
+  const rows = await all<FootprintRow>`
+    SELECT * FROM footprint WHERE repo_id = ${repoId} ORDER BY worksite_id, path`;
+  return rows.map(toEntry);
+}
+
 async function findOverlappingFootprints(
   repoId: string,
   path: string,
@@ -202,6 +208,7 @@ export function createFootprintStore(): FootprintStore {
   return {
     add: addFootprints,
     listByWorksite: listFootprintsByWorksite,
+    listByRepo: listFootprintsByRepo,
     findOverlapping: findOverlappingFootprints,
     removeByWorksite: removeFootprintsByWorksite,
     coverage: footprintCoverage,

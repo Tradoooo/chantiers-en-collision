@@ -123,6 +123,12 @@ async function findWorksite(id: string): Promise<Worksite | undefined> {
   return row ? toWorksite(row) : undefined;
 }
 
+async function findWorksitesByIds(ids: string[]): Promise<Worksite[]> {
+  if (ids.length === 0) return [];
+  const rows = await all<WorksiteRow>`SELECT * FROM worksite WHERE id IN (${ids})`;
+  return rows.map(toWorksite);
+}
+
 async function createWorksite(w: Omit<Worksite, "id"> & { id?: string }): Promise<Worksite> {
   const id = w.id ?? newId("ws");
   const { columns, values } = columnsOf(w);
@@ -225,6 +231,7 @@ export function createWorksiteStore(): WorksiteStore {
     create: createWorksite,
     update: updateWorksite,
     findById: findWorksite,
+    findByIds: findWorksitesByIds,
     findBySession: findWorksiteBySession,
     findByIssue: findWorksitesByIssue,
     listOpenByRepo: listOpenWorksites,
