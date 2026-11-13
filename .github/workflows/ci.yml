@@ -26,7 +26,7 @@ env:
 jobs:
   quality:
     name: quality
-    runs-on: [self-hosted, chantiers-en-collision-worker]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -34,12 +34,16 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           clean: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
       - uses: ./.github/actions/npm-cache
       - run: node scripts/verify.mjs --only lint --only typecheck
 
   test:
     name: test
-    runs-on: [self-hosted, chantiers-en-collision-worker]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -47,12 +51,16 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           clean: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
       - uses: ./.github/actions/npm-cache
       - run: node scripts/verify.mjs --only test
 
   manifest:
     name: manifest
-    runs-on: [self-hosted, chantiers-en-collision-worker]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -60,12 +68,16 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           clean: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
       - uses: ./.github/actions/npm-cache
       - run: node scripts/verify.mjs --only check:manifest --only check:storage
 
   site:
     name: site
-    runs-on: [self-hosted, chantiers-en-collision-worker]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
@@ -73,6 +85,10 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           clean: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
       - uses: ./.github/actions/npm-cache
       # Builds the GitHub Pages demo bundle and replays the engine headlessly
       # (four-agents scenario + playground verdicts) — what the judges click
