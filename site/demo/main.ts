@@ -8,11 +8,10 @@
  * Headless entry points are used by scripts/check-site-bundle.mjs (CI).
  */
 
-import type { Ctx } from "../../src/services/ctx";
-import type { Identity, SimulationResult, Verdict } from "../../src/core/types";
+import type { SimulationResult, Verdict } from "../../src/core/types";
 import { declareFootprint } from "../../src/services/declare";
-import { createMemoryStores } from "../../src/storage/memory";
-import { makeClock } from "../../src/testing/clock";
+import { buildEngine } from "../../src/services/engine";
+import { VERDICT_KINDS } from "../../src/core/constants";
 import { runScenario } from "../../src/simulation/run";
 import { FOUR_AGENTS } from "../../src/simulation/scenarios";
 import { ACTORS, createWorld, WORLD, type DemoWorld } from "./world";
@@ -29,10 +28,6 @@ export { createWorld, WORLD };
 
 const REPO = "acme/billing";
 
-function ctxFor(stores: ReturnType<typeof createMemoryStores>, now: () => string, id: Identity): Ctx {
-  return { stores, now, identity: id, projectId: "PROJ" } as Ctx;
-}
-
 export interface PlaygroundResult {
   a: Verdict;
   b: Verdict;
@@ -40,17 +35,15 @@ export interface PlaygroundResult {
 
 /** Agent A declares, then agent B declares; both verdicts are returned. */
 export async function playground(pathsA: string, pathsB: string): Promise<PlaygroundResult> {
-  const stores = createMemoryStores();
-  const clock = makeClock();
-  const now = () => clock.now();
-  const lea = ctxFor(stores, now, {
+  const engine = buildEngine({ projectId: "PROJ" });
+  const lea = engine.ctxFor({
     accountId: "lea@example.com", kind: "agent", client: "claude-code", sessionRef: "agent-lea",
   });
   const a = await declareFootprint(lea, {
     issueKey: "PROJ-88", repoSlug: REPO, paths: pathsA, session: "agent-lea",
   });
-  clock.advance(4);
-  const karim = ctxFor(stores, now, {
+  engine.clock.advance(4);
+  const karim = engine.ctxFor({
     accountId: "karim@example.com", kind: "agent", client: "claude-code", sessionRef: "agent-karim",
   });
   const b = await declareFootprint(karim, {
@@ -133,9 +126,6 @@ async function liveState(): Promise<{
     return undefined;
   }
 }
-
-/** The verdict classes the stylesheet knows about (the live one is real). */
-const VERDICT_KINDS = ["free", "caution", "wait", "stop"] as const;
 
 function liveVerdictCard(v: LiveVerdict): HTMLElement {
   // The card is painted with the verdict the DEPLOYMENT really returned

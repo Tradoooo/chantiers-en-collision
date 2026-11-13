@@ -19,8 +19,7 @@ import { closeWorksite } from "../services/worksites";
 import { reserveZone } from "../services/reservations";
 import { postNotice } from "../services/notices";
 import { ciFootprint, hookOpen, hookTouch } from "../services/ingest";
-import { createMemoryStores } from "../storage/memory";
-import { makeClock, type TestClock } from "../testing/clock";
+import { buildEngine } from "../services/engine";
 
 function str(input: Record<string, string | number | boolean>, key: string): string {
   const v = input[key];
@@ -184,20 +183,14 @@ function checkExpectation(
 }
 
 export async function runScenario(scenario: SimulationScenario): Promise<SimulationResult> {
-  const stores = createMemoryStores();
-  const clock: TestClock = makeClock();
+  const engine = buildEngine({ projectId: "SIM" });
   const results: SimulationStepResult[] = [];
   let index = 0;
 
   for (const step of scenario.steps) {
     index += 1;
-    clock.advance(2); // a couple of minutes between steps, for realism
-    const ctx: Ctx = {
-      stores,
-      now: () => clock.now(),
-      identity: identityFor(scenario, step),
-      projectId: "SIM",
-    };
+    engine.clock.advance(2); // a couple of minutes between steps, for realism
+    const ctx: Ctx = engine.ctxFor(identityFor(scenario, step));
     const result: SimulationStepResult = { index, step, ok: true };
     try {
       const outcome = await runStep(ctx, scenario, step);
