@@ -1,9 +1,0 @@
-name: _probe-hosted (temporaire)
-on:
-  workflow_dispatch: {}
-jobs:
-  probe:
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
-      - run: echo "dispatch OK sur runner hébergé GitHub"
